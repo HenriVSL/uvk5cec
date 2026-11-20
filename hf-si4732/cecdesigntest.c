@@ -2,13 +2,13 @@
 #include "driver/patch_ssb_compressed.h"    // Compressed SSB patch version (saving almost 1KB)
 
 #include "ceccommon.h"
-#include "ui\helper.h"
-#include "ui\status.h"
-#include "driver\eeprom.h"
-#include "helper\battery.h"
+#include "ui/helper.h"
+#include "ui/status.h"
+#include "driver/eeprom.h"
+#include "helper/battery.h"
 
-#include "bsp\dp32g030\pwmplus.h"
-#include "bsp\dp32g030\portcon.h"
+#include "bsp/dp32g030/pwmplus.h"
+#include "bsp/dp32g030/portcon.h"
 
 
 

@@ -4,14 +4,14 @@
 #include <stdbool.h>
 #include <math.h>
 #include <stdio.h>
-#include "driver\bk4819.h"
-#include "driver\keyboard.h"
+#include "driver/bk4819.h"
+#include "driver/keyboard.h"
 #include "audio.h"
 #include "string.h"
 #include <stdint.h>
 #include <string.h>
 #include "external/printf/printf.h"
-#include "driver\systick.h"
+#include "driver/systick.h"
 #include "cecgps.h"
 
 #define DELAY_TIME_FOR_1200BPS 565  //540 ~ 580
