@@ -592,6 +592,9 @@ void setPowerUp(uint8_t CTSIEN, uint8_t GPO2OEN, uint8_t PATCH, uint8_t XOSCEN, 
     }
     currentFrequencyParams.arg.FAST = 1;
     currentFrequencyParams.arg.DUMMY1 = 0;
+    // Clear the SSB sideband bits left by SSB mode: in FM/AM tune commands they
+    // are reserved bits that must be 0 (SI4735_setFrequency sets them again for SSB)
+    currentFrequencyParams.arg.USBLSB = 0;
     currentFrequencyParams.arg.ANTCAPH = 0;
     currentFrequencyParams.arg.ANTCAPL = 1;
 }

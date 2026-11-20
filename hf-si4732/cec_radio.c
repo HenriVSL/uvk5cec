@@ -531,28 +531,30 @@ void WaitMomentDisplay()
 }
 
 
+// Sends only the BFO offset (LSB/USB/CW); used after fine tuning and frequency entry
+static void SetSSBBfo(void)
+{
+	if (NowMode >= 2)
+		SI4735_setSSBBfo2(-currentBFO + (NowMode == 4 ? (CW_Tone * -10) : 0) );
+}
+
 void SetSSBConfig()
 {
-	SI4735_setAvcAmMaxGain(90); // Sets the maximum gain for automatic volume control on AM/SSB mode (from 12 to 90dB)
+	if (NowMode != MODE_FM)		// AM/SSB property; the FM firmware rejects it
+		SI4735_setAvcAmMaxGain(90); // Sets the maximum gain for automatic volume control on AM/SSB mode (from 12 to 90dB)
 	SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);	//AGC / ATT in every mode, not only SSB
 	if (NowMode < 2)
 		return;
-	SI4735_setSSBBfo2(-currentBFO + (NowMode == 4 ? (CW_Tone * -10) : 0) );
-	SI4735_setTuneFrequencyAntennaCapacitor(1); // Set antenna tuning capacitor for SW. 0 : auto, max for sw is 6143
+	SetSSBBfo();
+	// The antenna capacitor (ANTCAPL = 1) is already set at power up and every
+	// SI4735_setFrequency sends it, so no extra re-tune is needed here.
 
 	//bandwidthIdx
-	//SI4735_setSSBAudioBandwidth(NowMode == 4 ? 4 : bandwidthIdx);	//CW Mode : Fixed 0.5Khz Bandwidth
-	SI4735_setSSBAudioBandwidth(bandwidthIdx);	//CW Mode : Fixed 0.5Khz Bandwidth
-
-	//TEST AM CHANNEL FILTER
-	//SI4735_setBandwidth(4, 1);
-
-
 	//1. If audio bandwidth selected is about 2 kHz or below, it is recommended to set SBCUTFLT[3:0] to 0 to enable the band pass filter for better high cut performance on the wanted side band. Otherwise, set it to 1.
-	if (bandwidthIdx == 0 || bandwidthIdx == 4 || bandwidthIdx == 5)
-		SI4735_setSBBSidebandCutoffFilter(0);
-	else
-		SI4735_setSBBSidebandCutoffFilter(1);
+	// AUDIOBW and SBCUTFLT go out in one SSB_MODE write (was two)
+	currentSSBMode.param.AUDIOBW = bandwidthIdx;
+	currentSSBMode.param.SBCUTFLT = (bandwidthIdx == 0 || bandwidthIdx == 4 || bandwidthIdx == 5) ? 0 : 1;
+	sendSSBModeProperty();
 }
 
 void SetSI4735Mode(uint8_t newMode)
@@ -610,7 +612,7 @@ SI4735_setAM2
 	//AppllyStep(currentStep);	//Change currnetStep
 	NowMode = newMode;
 	//SI4735_setVolume(63);
-	SI4735_setSSBAutomaticVolumeControl(false);
+	currentSSBMode.param.AVCEN = 0;	// AVC off; sent with the SSB_MODE write in SetSSBConfig (SSB modes only)
 
 	SetSSBConfig();
 	SetSI4735ChangeStep(2);
@@ -1251,7 +1253,10 @@ void CEC_Radio_Work(void)
 				return;
 			}
 
-			SetSSBConfig();
+			// Mode and menu changes configure the chip themselves; only fine tuning
+			// and frequency entry (BFO reset) leave a new BFO offset to send
+			if (chkKey <= KEY_9 || chkKey == KEY_SIDE1 || chkKey == KEY_SIDE2)
+				SetSSBBfo();
 			refreshCount = 0;
 			gAskToSave = true;	//Redraw
 		}	//end of key invalid check
