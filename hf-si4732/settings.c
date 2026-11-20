@@ -278,7 +278,7 @@ void SETTINGS_InitEEPROM(void)
 		if (gCustomAesKey[i] != 0xFFFFFFFFu)
 		{
 			bHasCustomAesKey = true;
-			return;
+			break;	//was return : skipped loading the KD8CEC settings below
 		}
 	}
 

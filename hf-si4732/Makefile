@@ -514,6 +514,8 @@ endif
 
 LDFLAGS =
 LDFLAGS += -z noexecstack -mcpu=cortex-m0 -nostartfiles -Wl,-T,firmware.ld -Wl,--gc-sections
+# one LTO partition lets the optimizer see the whole program (smaller code)
+LDFLAGS += -flto-partition=one
 
 # Use newlib-nano instead of newlib
 LDFLAGS += --specs=nano.specs

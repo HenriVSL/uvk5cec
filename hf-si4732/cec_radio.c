@@ -99,12 +99,9 @@ bool disableAgc = true;
 
 typedef struct {
   uint8_t   BandType;
+  uint8_t   currentMode;  //0 : AM, 1:LSB, 2:USB
   uint16_t  minimumFreq;
   uint16_t  maximumFreq;
-//  uint16_t  currentFreq;
-  uint8_t   currentStep;  //STEP
-  uint8_t   currentMode;  //0 : AM, 1:LSB, 2:USB
-  int16_t   adjBFO;
   char bandName[5];
 } Band;
 
@@ -168,31 +165,31 @@ Band swband[] = {
 */
 
 //reduce 23 -> 20 for using FM Radio Frequency EEPROM, Split Current Freq
-Band swband[] = {
-  {BAND_HAM,    150,   471,   1, MODE_LSB, 0, "L.F"},
-  {BAND_HAM,    472,   479,   1, MODE_LSB, 0, "630M"},
-  {BAND_BCAST,  480,  1799,   1, MODE_AM,  0, "AMMF"},
-  {BAND_HAM,   1800,  2000,   1, MODE_LSB, 0, "160M"},
-  {BAND_BCAST, 2001,  3499,   1, MODE_AM,  0, "120M"},
-  {BAND_HAM,   3500,  4000,   1, MODE_LSB, 0, "80M"},
+const Band swband[] = {
+  {BAND_HAM, MODE_LSB, 150, 471, "L.F"},
+  {BAND_HAM, MODE_LSB, 472, 479, "630M"},
+  {BAND_BCAST, MODE_AM, 480, 1799, "AMMF"},
+  {BAND_HAM, MODE_LSB, 1800, 2000, "160M"},
+  {BAND_BCAST, MODE_AM, 2001, 3499, "120M"},
+  {BAND_HAM, MODE_LSB, 3500, 4000, "80M"},
 //  {BAND_BCAST, 4001,  6999,  4700,  1, MOD_AM,  0, "60M"},
-  {BAND_BCAST, 4001,  6999,   1, MODE_AM,  0, "60M"},
+  {BAND_BCAST, MODE_AM, 4001, 6999, "60M"},
 //  {BAND_BCAST, 5201,  6999,  5700,  1, MOD_AM,  0, "49M"},
-  {BAND_HAM,   7000,  7300,   1, MODE_LSB, 0, "40M"},
-  {BAND_BCAST, 7301,  9999,   1, MODE_AM,  0, "35M"},
-  {BAND_HAM,  10000, 10500,   1, MODE_LSB, 0, "30M"},
-  {BAND_BCAST,10501, 13999,   1, MODE_AM,  0, "25M"},
+  {BAND_HAM, MODE_LSB, 7000, 7300, "40M"},
+  {BAND_BCAST, MODE_AM, 7301, 9999, "35M"},
+  {BAND_HAM, MODE_LSB, 10000, 10500, "30M"},
+  {BAND_BCAST, MODE_AM, 10501, 13999, "25M"},
 //  {BAND_BCAST,13000, 13999, 13500,  1, MOD_AM,  0, "22M"},
-  {BAND_HAM,  14000, 14499,   1, MODE_USB, 0, "20M"},
-  {BAND_BCAST,14500, 17999,   1, MODE_AM,  0, "19M"},
+  {BAND_HAM, MODE_USB, 14000, 14499, "20M"},
+  {BAND_BCAST, MODE_AM, 14500, 17999, "19M"},
 //  {BAND_BCAST,17000, 17999, 17500,  1, MOD_AM,  0, "18M"},
-  {BAND_HAM,  18000, 18199,   1, MODE_USB, 0, "17M"},
-  {BAND_BCAST,18200, 20999,   1, MODE_AM,  0, "16M"},
-  {BAND_HAM,  21000, 21499,   1, MODE_USB, 0, "15M"},
-  {BAND_BCAST,21500, 24799,   1, MODE_AM,  0, "13M"},
-  {BAND_HAM,  24800, 25000,   1, MODE_USB, 0, "12M"},
-  {BAND_HAM,  25001, 27999,   1, MODE_AM,  0, "11M"},
-  {BAND_HAM,  28000, 30000,   1, MODE_USB, 0, "10M"},
+  {BAND_HAM, MODE_USB, 18000, 18199, "17M"},
+  {BAND_BCAST, MODE_AM, 18200, 20999, "16M"},
+  {BAND_HAM, MODE_USB, 21000, 21499, "15M"},
+  {BAND_BCAST, MODE_AM, 21500, 24799, "13M"},
+  {BAND_HAM, MODE_USB, 24800, 25000, "12M"},
+  {BAND_HAM, MODE_AM, 25001, 27999, "11M"},
+  {BAND_HAM, MODE_USB, 28000, 30000, "10M"},
 };
 
 uint16_t CurrentFreqs[20];
@@ -299,8 +296,8 @@ void CEC_Radio_DrawScreen(void)
 	//sprintf(tmpBuff, NowMode == MODE_FM ? "%3u.%02u" : "%3u.%03u %u %u", tmpFreq / freqScaleDiv, (tmpFreq) % freqScaleDiv, tmpFreq, freqScaleDiv);
 	//currentStep
 	int nowBandIndex = CEC_FindBandIndex(tmpFreq);
-	char * bandName;
-	char * bandTypeName;
+	const char * bandName;
+	const char * bandTypeName;
 	if (NowMode == MODE_FM)
 	{
 		nowBandIndex = -1;
