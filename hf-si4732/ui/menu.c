@@ -40,6 +40,8 @@
 const t_menu_item MenuList[] =
 {
 //   text,     voice ID,                               menu ID
+	{"HF Rx",  VOICE_ID_INVALID,                       MENU_HFRADIO       },
+	{"HFBoot", VOICE_ID_INVALID,                       MENU_HFBOOT        },
 	{"Step",   VOICE_ID_FREQUENCY_STEP,                MENU_STEP          },
 	
 	//KD8CEC MENU
@@ -449,6 +451,7 @@ const char gSubMenu_SCRAMBLER[][7] =
 const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
 {
 	{"NONE",			ACTION_OPT_NONE},
+	{"HF\nRADIO",		ACTION_OPT_HFRADIO},
 #ifdef ENABLE_FLASHLIGHT
 	{"FLASH\nLIGHT",	ACTION_OPT_FLASHLIGHT},
 #endif
@@ -606,6 +609,10 @@ void UI_DisplayMenu(void)
 		case MENU_SQL:
 		case MENU_HFDUALVOL:
 			sprintf(String, "%d", gSubMenuSelection);
+			break;
+
+		case MENU_HFRADIO:
+			strcpy(String, "PRESS\nMENU");
 			break;
 		
 //================== KD8CEC MENU
@@ -789,6 +796,7 @@ void UI_DisplayMenu(void)
 		#ifdef ENABLE_NOAA
 			case MENU_NOAA_S:
 		#endif
+		case MENU_HFBOOT:
 		case MENU_HFDUALWATCH:
 		case MENU_350TX:
 		case MENU_200TX:

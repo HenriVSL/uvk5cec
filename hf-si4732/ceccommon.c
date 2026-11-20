@@ -39,6 +39,7 @@ uint8_t CEC_LiveSeekMode = 0;   //0:NONE, 1:LIVE, 2:LIVE+1, 3:LIVE+2
 uint8_t CW_Tone       = 70;     //[EEPROM] *10 Hz, because BK4819 inc/dec 10Hz, Move from cecmorese.c
 uint8_t HF_DualWatch = 0;
 uint8_t HF_DualVol = 63;
+uint8_t HF_BootMode = 0;		//1 : start in HF mode at power on
 
 //================================= For Reduce Use Memory ====================
 //gMR_ChannelAttributes[207]; -> function

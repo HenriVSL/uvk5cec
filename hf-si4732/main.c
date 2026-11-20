@@ -221,6 +221,12 @@ void Main(void)
 #ifdef ENABLE_NOAA
 		RADIO_ConfigureNOAA();
 #endif
+
+		// "Boot HF" setting : start in the HF receiver, EXIT returns to the normal radio
+		if (HF_BootMode && BootMode == BOOT_MODE_NORMAL)
+		{
+			CEC_Radio_Work();
+		}
 	}
 
 	//for test

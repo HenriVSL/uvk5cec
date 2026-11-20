@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "app/action.h"
+#include "ceccommon.h"
 #include "app/app.h"
 #include "app/chFrScanner.h"
 #include "app/common.h"
@@ -100,6 +101,7 @@ void (*action_opt_table[])(void) = {
 #else
 	[ACTION_OPT_BLMIN_TMP_OFF] = &FUNCTION_NOP,
 #endif
+	[ACTION_OPT_HFRADIO] = &CEC_Radio_Work,
 };
 
 static_assert(ARRAY_SIZE(action_opt_table) == ACTION_OPT_LEN);

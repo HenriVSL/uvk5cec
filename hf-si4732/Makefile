@@ -9,12 +9,12 @@ ENABLE_AIRCOPY                ?= 0
 ENABLE_FMRADIO                ?= 0
 ENABLE_NOAA                   ?= 0
 ENABLE_VOICE                  ?= 0
-ENABLE_VOX                    ?= 1
+ENABLE_VOX                    ?= 0
 ENABLE_ALARM                  ?= 0
 ENABLE_TX1750                 ?= 0
 ENABLE_PWRON_PASSWORD         ?= 0
 ENABLE_DTMF_CALLING           ?= 0	#Default Disabled by KD8CEC
-ENABLE_FLASHLIGHT             ?= 1
+ENABLE_FLASHLIGHT             ?= 0
 
 # ---- KD8CEC WORK -------------------------------------------------
 # ---- STOCK QUANSHENG FERATURES for Reduce Usage Flash memroy ----

@@ -6,6 +6,7 @@
 #include "ui/status.h"
 #include "driver/eeprom.h"
 #include "helper/battery.h"
+#include "settings.h"
 
 #include "bsp/dp32g030/pwmplus.h"
 #include "bsp/dp32g030/portcon.h"
@@ -85,7 +86,6 @@ uint8_t SSBFreqStep = 0; //1
 uint8_t FMFreqStep = 1;	//10
 bool disableAgc = true;
 
-uint8_t CurrentFunctinIndex = 0;	//BAND, STEP, LNA, BW, BFO
 
 
 #define BAND_BCAST 0
@@ -247,7 +247,7 @@ void CEC_Radio_DrawRSSI(bool _isDraw)
 
 void CEC_Radio_DrawScreen(void)
 {
-	uint8_t tmpBuff[16];
+	char tmpBuff[32];
 //    uint16_t tmpFreq = 14074;
     uint16_t freqScaleDiv =  1000;
 	uint8_t dispStep =  0;
@@ -328,7 +328,7 @@ void CEC_Radio_DrawScreen(void)
 		sprintf(tmpLnaStr, "ATT %2d", currentAGCAtt);
 	}
 
-	sprintf(tmpBuff, "%-5s %4uKhz %s %3sK",bandTypeName,  currentStep, tmpLnaStr, bandwitdth[bandwidthIdx] );
+	sprintf(tmpBuff, "%-5s %4uKhz %s %3sK",bandTypeName,  NowMode == MODE_FM ? currentStep * 10 : currentStep, tmpLnaStr, bandwitdth[bandwidthIdx] );
     CEC_DisplaySmallest(tmpBuff, 3, 1, true, true);
     CEC_DisplaySmallest("H0.5", 107, 1, true, true);
     CEC_ReverseScreen(gStatusLine, sizeof(gStatusLine));
@@ -401,8 +401,11 @@ void CEC_Radio_DrawScreen(void)
 	//With 13
 	//dispStep
 
-	sprintf(tmpBuff, "%03d", currentBFO);
-    CEC_DisplaySmallest(tmpBuff, 105, 9, false, true);
+	if (NowMode >= MODE_LSB)
+	{
+		sprintf(tmpBuff, "%+04d", currentBFO);
+		CEC_DisplaySmallest(tmpBuff, 105, 9, false, true);
+	}
 
 	CEC_Radio_DrawRSSI(0);
 	//UI_PrintStringSmallNormal("S5}}}}}}{{{{{{{{{{", 0, 0, 3);
@@ -421,54 +424,9 @@ void CEC_Radio_DrawScreen(void)
 	CEC_DisplaySmallest("STEP-", 2, 48, false, true);
     UI_DrawRectangleBuffer(gFrameBuffer, 0 , 34, 23, 55, true);
 */
-    UI_PrintStringSmallNormal("BND STP LNA BW BFO", 0, 0, 5);
-	
-    uint8_t * startPT = &gFrameBuffer[5][0];
-    startPT += (27 * CurrentFunctinIndex);
-    for (int i = 0; i < 24; i++)
-    {
-        startPT[i] = ~startPT[i];
-
-    }
-
-    memset(gFrameBuffer[6], 0, 128);
-
-	if (CurrentFunctinIndex == 0)
-	{
-		sprintf(tmpBuff, "BAND:%5s", bandName);
-    	UI_PrintStringSmallNormal(tmpBuff, 0, 0, 6);
-	}
-	else if (CurrentFunctinIndex == 1)
-	{
-		//STEP
-		sprintf(tmpBuff, "STEP:%5dKhz", currentStep);
-    	UI_PrintStringSmallNormal(tmpBuff, 0, 0, 6);
-	}
-	else if (CurrentFunctinIndex == 2)
-	{
-		//STEP
-		if (! disableAgc)
-		{
-    		UI_PrintStringSmallNormal("AGC ON", 0, 0, 6);
-		}
-		else
-		{
-			sprintf(tmpBuff, "ATT:%3d", currentAGCAtt);
-    		UI_PrintStringSmallNormal(tmpBuff, 0, 0, 6);
-		}
-	}
-	else if (CurrentFunctinIndex == 3)
-	{
-		//STEP
-		sprintf(tmpBuff, "BW:%3sKhz", bandwitdth[bandwidthIdx]);
-    	UI_PrintStringSmallNormal(tmpBuff, 0, 0, 6);
-	}
-	else if (CurrentFunctinIndex == 4)
-	{
-		//STEP
-		sprintf(tmpBuff, "BFO:%5d", currentBFO);
-    	UI_PrintStringSmallNormal(tmpBuff, 0, 0, 6);
-	}
+	// Key hints instead of the old BND/STP/LNA/BW/BFO function bar
+	CEC_DisplaySmallest(NowMode >= MODE_LSB ? "UP/DN:TUNE SIDE:FINE F:MODE" : "UP/DN:TUNE SIDE:STEP F:MODE", 2, 42, false, true);
+	CEC_DisplaySmallest("0-9:FREQ MENU:SETUP *:STEP", 2, 50, false, true);
 
     ST7565_BlitFullScreen();
 
@@ -612,11 +570,11 @@ void WaitMomentDisplay()
 void SetSSBConfig()
 {
 	SI4735_setAvcAmMaxGain(90); // Sets the maximum gain for automatic volume control on AM/SSB mode (from 12 to 90dB)
+	SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);	//AGC / ATT in every mode, not only SSB
 	if (NowMode < 2)
 		return;
 	SI4735_setSSBBfo2(-currentBFO + (NowMode == 4 ? (CW_Tone * -10) : 0) );
 	SI4735_setTuneFrequencyAntennaCapacitor(1); // Set antenna tuning capacitor for SW. 0 : auto, max for sw is 6143
-	SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);
 
 	//bandwidthIdx
 	//SI4735_setSSBAudioBandwidth(NowMode == 4 ? 4 : bandwidthIdx);	//CW Mode : Fixed 0.5Khz Bandwidth
@@ -810,13 +768,373 @@ void LoadSaveConfig(bool isLoad)
 	}
 }
 
+//===================== MENU DRIVEN HF UI =====================
+// Main screen : 0-9 frequency entry, UP/DOWN tune, SIDE fine tune (SSB) or step (AM/FM),
+//               F mode, * step, MENU setup, EXIT back to VHF/UHF
+// Setup menu  : UP/DOWN select, MENU edit (UP/DOWN or SIDE change the value live),
+//               MENU/EXIT done, 1-9 jump to item, EXIT close
+enum {
+	HFM_MODE = 0,
+	HFM_BAND,
+	HFM_STEP,
+	HFM_AGC,
+	HFM_BW,
+	HFM_FINE,
+	HFM_BFO,
+	HFM_BOOT,
+	HFM_EXIT,
+	HFM_COUNT
+};
+
+static const char hfMenuName[HFM_COUNT][8] = {"Mode", "Band", "Step", "AGC", "SSB BW", "FineStp", "BFO", "Boot HF", "Exit HF"};
+static const uint8_t agcAttList[] = {0, 1, 5, 15, 26};	//index 0 : AGC ON, 1~ : AGC OFF + ATT
+static const uint8_t fineStepList[] = {10, 25, 50, 100};
+static uint8_t hfMenuCursor = 0;
+
+static uint8_t HF_Cycle(uint8_t value, uint8_t count, int8_t dir)
+{
+	return (value + count + dir) % count;
+}
+
+static uint8_t HF_GetAgcIndex(void)
+{
+	if (!disableAgc)
+		return 0;
+
+	for (uint8_t i = 0; i < sizeof(agcAttList); i++)
+		if (agcAttList[i] == currentAGCAtt)
+			return i + 1;
+
+	return 1;
+}
+
+static uint8_t HF_GetFineIndex(void)
+{
+	for (uint8_t i = 0; i < sizeof(fineStepList); i++)
+		if (fineStepList[i] == currentBFOStep)
+			return i;
+
+	return 0;
+}
+
+// SSB/CW fine tune with the BFO, folded into the dial frequency every kHz
+static void HF_FineTune(int8_t dir)
+{
+	currentBFO += dir * currentBFOStep;
+	if (currentBFO > 500 && currentWorkFrequency < AMBAND_FREQ_HIGH)
+	{
+		currentBFO -= 1000;
+		SI4735_setFrequency(currentWorkFrequency + 1);
+	}
+	else if (currentBFO < -500 && currentWorkFrequency > AMBAND_FREQ_LOW)
+	{
+		currentBFO += 1000;
+		SI4735_setFrequency(currentWorkFrequency - 1);
+	}
+}
+
+static void HF_ChangeBand(int8_t dir)
+{
+	int8_t bandIndex = NowMode == MODE_FM ? -1 : CEC_FindBandIndex(currentWorkFrequency);
+
+	if (bandIndex < 0)
+		bandIndex = 0;
+	else
+	{
+		CurrentFreqs[bandIndex] = currentWorkFrequency;
+		bandIndex = HF_Cycle(bandIndex, 20, dir);
+	}
+
+	CurrentAMFreq = CurrentFreqs[bandIndex];
+	if (NowMode == MODE_FM)	//FM can not tune HF, use the band mode now
+		SetSI4735Mode(swband[bandIndex].currentMode);
+
+	SI4735_setFrequency(CurrentAMFreq);
+	currentBFO = 0;
+	isAutoSave = 1;
+}
+
+// Applied when band editing is done, so scrolling bands does not reload the SSB patch every step
+static void HF_ApplyBandMode(void)
+{
+	int8_t bandIndex = CEC_FindBandIndex(currentWorkFrequency);
+
+	CurrentAMFreq = currentWorkFrequency;
+	if (NowMode != MODE_FM && bandIndex >= 0 && swband[bandIndex].currentMode != NowMode)
+		SetSI4735Mode(swband[bandIndex].currentMode);
+}
+
+static void HF_MenuValue(uint8_t item, char *buf)
+{
+	buf[0] = 0;
+	switch (item)
+	{
+		case HFM_MODE:
+			strcpy(buf, modeName[NowMode]);
+			break;
+		case HFM_BAND:
+			strcpy(buf, NowMode == MODE_FM ? "FM" : swband[CEC_FindBandIndex(currentWorkFrequency)].bandName);
+			break;
+		case HFM_STEP:
+			sprintf(buf, "%uK", NowMode == MODE_FM ? currentStep * 10 : currentStep);
+			break;
+		case HFM_AGC:
+			if (disableAgc)
+				sprintf(buf, "ATT %u", currentAGCAtt);
+			else
+				strcpy(buf, "AUTO");
+			break;
+		case HFM_BW:
+			sprintf(buf, "%sK", bandwitdth[bandwidthIdx]);
+			break;
+		case HFM_FINE:
+			sprintf(buf, "%uHz", currentBFOStep);
+			break;
+		case HFM_BFO:
+			sprintf(buf, "%+dHz", currentBFO);
+			break;
+		case HFM_BOOT:
+			strcpy(buf, HF_BootMode ? "ON" : "OFF");
+			break;
+	}
+}
+
+static void HF_MenuChange(uint8_t item, int8_t dir)
+{
+	uint8_t agcIndex;
+
+	switch (item)
+	{
+		case HFM_MODE:
+			if (NowMode != MODE_FM)
+				CurrentAMFreq = currentWorkFrequency;	//keep the fine tune fold
+			SetSI4735Mode(HF_Cycle(NowMode, 5, dir));
+			break;
+		case HFM_BAND:
+			HF_ChangeBand(dir);
+			break;
+		case HFM_STEP:
+			SetSI4735ChangeStep(dir > 0);
+			break;
+		case HFM_AGC:
+			agcIndex = HF_Cycle(HF_GetAgcIndex(), sizeof(agcAttList) + 1, dir);
+			disableAgc = agcIndex != 0;
+			currentAGCAtt = agcIndex ? agcAttList[agcIndex - 1] : 0;
+			break;
+		case HFM_BW:
+			bandwidthIdx = HF_Cycle(bandwidthIdx, MAX_BANDWIDTH_COUNT, dir);
+			break;
+		case HFM_FINE:
+			currentBFOStep = fineStepList[HF_Cycle(HF_GetFineIndex(), sizeof(fineStepList), dir)];
+			break;
+		case HFM_BFO:
+			HF_FineTune(dir);
+			break;
+		case HFM_BOOT:
+			HF_BootMode = !HF_BootMode;
+			break;
+	}
+
+	SetSSBConfig();
+}
+
+static void HF_DrawMenu(bool editing)
+{
+	char buf[12];
+	uint8_t topItem = hfMenuCursor < 7 ? 0 : hfMenuCursor - 6;
+
+	memset(gStatusLine, 0, sizeof(gStatusLine));
+	memset(gFrameBuffer, 0, sizeof(gFrameBuffer));
+
+	CEC_DisplaySmallest(editing ? "HF SETUP  UP/DN:CHANGE  MENU:OK" : "HF SETUP  MENU:EDIT  EXIT:CLOSE", 2, 1, true, true);
+	CEC_ReverseScreen(gStatusLine, sizeof(gStatusLine));
+
+	for (uint8_t i = 0; i < 7 && topItem + i < HFM_COUNT; i++)
+	{
+		uint8_t item = topItem + i;
+
+		sprintf(buf, "%u %s", item + 1, hfMenuName[item]);
+		UI_PrintStringSmallNormal(buf, 0, 0, i);
+
+		HF_MenuValue(item, buf);
+		UI_PrintStringSmallNormal(buf, 127 - strlen(buf) * 7, 0, i);
+
+		if (item == hfMenuCursor)
+		{
+			if (editing)
+				CEC_ReverseScreen(gFrameBuffer[i] + 72, 56);
+			else
+				CEC_ReverseScreen(gFrameBuffer[i], 128);
+		}
+	}
+
+	ST7565_BlitStatusLine();
+	ST7565_BlitFullScreen();
+}
+
+// Returns true when "Exit HF" was selected
+static bool HF_SetupMenu(void)
+{
+	bool editing = false;
+	bool bandChanged = false;
+	bool needKeyUp = true;
+	uint8_t oldBootMode = HF_BootMode;
+	bool exitHF = false;
+
+	while (1)
+	{
+		HF_DrawMenu(editing);
+
+		if (needKeyUp)
+			WaitKeyUp();
+
+		KEY_Code_t key;
+		while ((key = GetKeyValue()) == KEY_INVALID)
+			delay(10);
+
+		BACKLIGHT_TurnOn();
+		needKeyUp = true;
+
+		if (key == KEY_UP || key == KEY_DOWN || key == KEY_SIDE1 || key == KEY_SIDE2)
+		{
+			int8_t dir = (key == KEY_UP || key == KEY_SIDE1) ? 1 : -1;
+
+			needKeyUp = false;	//hold to repeat
+			if (editing)
+			{
+				HF_MenuChange(hfMenuCursor, dir);
+				bandChanged |= hfMenuCursor == HFM_BAND;
+			}
+			else
+				hfMenuCursor = HF_Cycle(hfMenuCursor, HFM_COUNT, -dir);
+		}
+		else if (key == KEY_MENU || key == KEY_EXIT)
+		{
+			if (key == KEY_MENU && hfMenuCursor == HFM_EXIT)
+			{
+				exitHF = true;
+				break;
+			}
+
+			if (!editing && key == KEY_EXIT)
+				break;
+
+			if (bandChanged)
+				HF_ApplyBandMode();
+			bandChanged = false;
+			editing = !editing;
+		}
+		else if (!editing && key >= KEY_1 && key <= KEY_9)
+			hfMenuCursor = key - KEY_1;
+	}
+
+	if (oldBootMode != HF_BootMode)
+		SETTINGS_SaveSettings();
+
+	isAutoSave = 1;
+	return exitHF;
+}
+
+// Direct frequency entry, started with the first digit already counted.
+// Type kHz (7074) or MHz with * as the decimal point (7*074). Short numbers are MHz (7, 14, 93).
+// MENU accepts, EXIT deletes the last digit (cancel when empty). FM broadcast frequencies switch to FM.
+static void HF_FrequencyEntry(KEY_Code_t key)
+{
+	char input[8];
+	uint8_t len = 0;
+	int8_t dotPos = -1;
+	uint32_t lastKeyTime = millis10();
+
+	while (1)
+	{
+		if (key != KEY_INVALID)
+		{
+			if (key <= KEY_9 && len < 7)
+				input[len++] = '0' + key;
+			else if (key == KEY_STAR && dotPos < 0 && len < 7)
+			{
+				dotPos = len;
+				input[len++] = '.';
+			}
+			else if (key == KEY_EXIT)
+			{
+				if (--len == dotPos)
+					dotPos = -1;
+				if (len == 0)
+					return;
+			}
+			else if (key == KEY_MENU)
+				break;
+
+			input[len] = 0;
+
+			//accept when no more digits are possible
+			if (dotPos < 0 ? len >= 5 : len - dotPos > 3)
+				break;
+
+			memset(gFrameBuffer[1], 0, 104);
+			memset(gFrameBuffer[2], 0, 104);
+			memset(gFrameBuffer[5], 0, 128 * 2);
+			UI_DisplayFrequency(input, 20, 1, false);
+			CEC_DisplaySmallest("MENU:OK  EXIT:DEL  *:DOT", 2, 42, false, true);
+			CEC_DisplaySmallest("KHZ 7074 OR MHZ 7*074", 2, 50, false, true);
+			ST7565_BlitFullScreen();
+
+			WaitKeyUp();
+			lastKeyTime = millis10();
+		}
+
+		if (millis10() - lastKeyTime > 1000)	//10 sec without key : cancel
+			return;
+
+		delay(20);
+		key = KEYBOARD_Poll();
+	}
+
+	uint32_t freq = 0;	//kHz
+	uint8_t fracDigits = 0;
+	for (uint8_t i = 0; i < len; i++)
+	{
+		if (input[i] == '.')
+			continue;
+		freq = freq * 10 + input[i] - '0';
+		if (dotPos >= 0 && i > dotPos)
+			fracDigits++;
+	}
+
+	if (dotPos >= 0)
+	{
+		while (fracDigits++ < 3)
+			freq *= 10;
+	}
+	else if (freq <= 30 || (freq >= 64 && freq <= 108))
+		freq *= 1000;
+
+	if (freq >= 70000 && freq <= 108000)
+	{
+		CurrentFMFreq = freq / 10;
+		if (NowMode != MODE_FM)
+			SetSI4735Mode(MODE_FM);
+		SI4735_setFrequency(CurrentFMFreq);
+	}
+	else if (freq >= AMBAND_FREQ_LOW && freq <= AMBAND_FREQ_HIGH)
+	{
+		CurrentAMFreq = freq;
+		if (NowMode == MODE_FM)
+			SetSI4735Mode(swband[CEC_FindBandIndex(freq)].currentMode);
+		SI4735_setFrequency(freq);
+		currentBFO = 0;
+	}
+
+	isAutoSave = 1;
+}
+
 bool isNeed4732Init = true;
 void CEC_Radio_Work(void)
 {
     //SI4735Test_SSB();
     //DRAW MAIN SCREEN 
 	uint16_t refreshCount = 0;
-	uint8_t keyPressTime = 0;
 
 	WaitMomentDisplay();
 
@@ -910,284 +1228,39 @@ void CEC_Radio_Work(void)
 		if (chkKey != KEY_INVALID)
 		{
 			BACKLIGHT_TurnOn();
+			isNeedKeyUpCheck = true;
 
-			if (chkKey == KEY_MENU)
+			if (chkKey <= KEY_9)
+				HF_FrequencyEntry(chkKey);
+			else if (chkKey == KEY_MENU)
 			{
-				if (++CurrentFunctinIndex > 4)
-					CurrentFunctinIndex = 0;
-
-				isNeedKeyUpCheck = true;
+				if (HF_SetupMenu())
+					chkKey = KEY_EXIT;
 			}
-			else if (chkKey == KEY_0)
-			{
-				int indexOffset = 0;
-
-				//if want reduce memory, remark below 1line and CEC_ReverseScreen Command
-				int nowBandIndex = CEC_FindBandIndex(currentWorkFrequency);
-				CurrentFreqs[nowBandIndex] = currentWorkFrequency;
-				isNeedKeyUpCheck = 1;
- 				while(1)
-                {
-					if (isNeedKeyUpCheck)
-					{
-						memset(gFrameBuffer, 0, sizeof(gFrameBuffer));
-						for (int i = 0; i < 7; i++)
-						{
-							int drawOffset = indexOffset +i;
-							sprintf(strBuff, "%d %-4s%2u.%03u %s", i + 1, swband[drawOffset].bandName, 
-								CurrentFreqs[drawOffset] / 1000, (CurrentFreqs[drawOffset]) % 1000,
-								(swband[drawOffset].BandType == BAND_BCAST ? "BROAD" : "HAM"));
-							UI_PrintStringSmallNormal(strBuff, 2, 0, i);
-
-							if (nowBandIndex == drawOffset)
-							{
-								CEC_ReverseScreen(gFrameBuffer[i], 128);
-							}
-							//ianlee
-						}
-						ST7565_BlitFullScreen();
-
-						WaitKeyUp();
-						isNeedKeyUpCheck = 0;
-					}
-					//delay(200);
-					//WaitKeyUp();
-					chkKey = GetKeyValue();
-					if (chkKey != KEY_INVALID)
-					{
-						isNeedKeyUpCheck = true;
-
-						if (chkKey == 0)
-						{
-							if (indexOffset == 0)
-								indexOffset = 7;
-							else if (indexOffset == 7)
-								indexOffset = 13;
-							else if (indexOffset == 13)
-								break;
-						}
-						else if (chkKey < 8)
-						{
-							//if (NowMode == 0)	//if fm, change AM
-							//{
-							SetSI4735Mode(swband[indexOffset + chkKey - 1].currentMode);
-							//}
-
-							SI4735_setFrequency(CurrentFreqs[indexOffset + chkKey - 1]);  //swband[_newIndex].currentFreq);
-							isAutoSave = 1;
-							break;
-						}
-						else if (chkKey == KEY_EXIT)
-						{
-							//isNeedKeyUpCheck = true;
-							break;
-						}
-					}
-
-                }
-			}
-			else if (chkKey == KEY_F)
-			{
-				uint8_t newMode = 0;
-				//Check Long Press
-				keyPressTime = GetKeyPressTime(130);
-				if (keyPressTime > 120)	//Change AM,FM <-> LSB, USB
-				{
-					if (NowMode < 2)	//FM, AM Mode
-						newMode = 3;	//CHANGE TO LSB
-					else
-						newMode = 1;	//CHAGNE TO AM
-				}
-				else
-				{
-					//FM,AM / LSB/USB Toggle
-					//0, 1    2   3
-					switch (NowMode)
-					{
-						case 0 :
-							newMode = 1;
-							break;
-						case 1 :
-							newMode = 0;
-							break;
-						case 2 :
-							newMode = 3;
-							break;
-						case 3 :
-							newMode = 4;
-							break;
-						case 4 :
-							newMode = 2;
-							break;
-					}
-				}
-				SetSI4735Mode(newMode);
-
-				//WaitKeyUp();
-				isNeedKeyUpCheck = true;
-			}
-			else if (chkKey == KEY_UP)
-				SI4735_frequencyUp();
-			else if (chkKey == KEY_DOWN)
-				SI4735_frequencyDown();
+			else if (chkKey == KEY_F)	//AM -> LSB -> USB -> CW -> AM, FM -> AM
+				SetSI4735Mode(NowMode == MODE_FM || NowMode == MODE_CW ? MODE_AM : NowMode + 1);
 			else if (chkKey == KEY_STAR)
+				SetSI4735ChangeStep(1);
+			else if (chkKey == KEY_UP || chkKey == KEY_DOWN || chkKey == KEY_SIDE1 || chkKey == KEY_SIDE2)
 			{
-				SetSI4735ChangeStep(0);
-				//WaitKeyUp();
-				isNeedKeyUpCheck = true;
-			}
-			else if (chkKey == KEY_SIDE1 || chkKey == KEY_SIDE2)
-			{
-				//UP 1Mhz
-				if (NowMode == 0)	//FM MODE SKIP
-					return;
+				int8_t dir = (chkKey == KEY_UP || chkKey == KEY_SIDE1) ? 1 : -1;
 
-				//BAND Change
-				if (CurrentFunctinIndex == 0)
-				{
-					int32_t tmpFreq = SI4735_getFrequency();
-					int _bandIndex = CEC_FindBandIndex(tmpFreq);
-					int _newIndex = -1;
-					if (_bandIndex < 0)
-						return;
-
- 					CurrentFreqs[_bandIndex] = tmpFreq;
-					if (chkKey == KEY_SIDE2 && _bandIndex > 0)
-						_newIndex = _bandIndex - 1;
-					else if (chkKey == KEY_SIDE1 && _bandIndex < 19)
-						_newIndex = _bandIndex + 1;
-
-					if (_newIndex != -1)
-					{
-						SI4735_setFrequency(CurrentFreqs[_newIndex]);  //swband[_newIndex].currentFreq);
-						isAutoSave = 1;
-						//LoadSaveConfig(false);	//SAVE
-					}
-						//SI4735_setFrequency(swband[_newIndex].currentFreq);
-				}
-				else if (CurrentFunctinIndex == 1)
-				{
-					SetSI4735ChangeStep(chkKey == KEY_SIDE1);
-				}
-				else if (CurrentFunctinIndex == 2)
-				{
-					//STEP
-					if (disableAgc)	//LNA STATUS
-					{
-						//same changed by any key
-						//if (chkKey == KEY_SIDE1)
-						{
-							if (currentAGCAtt == 0)
-								currentAGCAtt = 1;
-							else if (currentAGCAtt == 1)
-								currentAGCAtt = 5;
-							else if (currentAGCAtt == 5)
-								currentAGCAtt = 15;
-							else if (currentAGCAtt == 15)
-								currentAGCAtt = 26;
-							else
-								disableAgc = 0;	//AGC
-						}
-						/*
-						else
-						{
-							if (currentAGCAtt == 0)
-								disableAgc = 0;	//AGC
-							else if (currentAGCAtt == 1)
-								currentAGCAtt = 0;
-							else if (currentAGCAtt == 5)
-								currentAGCAtt = 1;
-							else if (currentAGCAtt == 15)
-								currentAGCAtt = 5;
-							else
-								currentAGCAtt = 26;	//AGC
-
-						}
-						*/
-					}
-					else	//AGC
-					{
-						disableAgc = 1;		//AGC DIABLE
-						//currentAGCAtt = (chkKey == KEY_SIDE1 ? 0 : 26);
-						currentAGCAtt = 0;
-					}
-					//SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);
-				}
-				else if (CurrentFunctinIndex == 3)
-				{
-					//STEP
-					/*
-					int newBWIndex = bandwidthIdx + (chkKey == KEY_SIDE1 ? -1 : 1);
-					if (newBWIndex >= 0 && newBWIndex < 6)
-						bandwidthIdx = newBWIndex;
-					*/
-					bandwidthIdx += (chkKey == KEY_SIDE1 ? 1 : -1);
-					if (bandwidthIdx == 255)
-						bandwidthIdx = 5;
-					else if (bandwidthIdx == 6)
-					    bandwidthIdx = 0;
-
-				}
-				else if (CurrentFunctinIndex == 4)
-				{
-					//STEP
-					currentBFO += (chkKey == KEY_SIDE1 ? 5 : -5);
-				}
-
-
-				isNeedKeyUpCheck = (CurrentFunctinIndex != 4);
-				//WaitKeyUp();
-			}
-			/*
-			else if (chkKey == KEY_1)
-			{
-				bandwidthIdx++;
-				if (bandwidthIdx > 5)
-					bandwidthIdx = 0;
-				SI4735_setSSBAudioBandwidth(bandwidthIdx);
-
-      			if (bandwidthIdx == 0 || bandwidthIdx == 4 || bandwidthIdx == 5)
-        			SI4735_setSBBSidebandCutoffFilter(0);
-      			else
-        			SI4735_setSBBSidebandCutoffFilter(1);
-
-				WaitKeyUp();
-			}
-			*/
-			
-			/*
-			else if (chkKey == KEY_2)
-			{
-      			disableAgc = !disableAgc;
-				SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);
-				WaitKeyUp();
-			}
-			else if (chkKey == KEY_5)
-			{
-				if (currentAGCAtt == 0)
-					currentAGCAtt = 1;
-				else if (currentAGCAtt == 1)
-					currentAGCAtt = 5;
-				else if (currentAGCAtt == 5)
-					currentAGCAtt = 15;
-				else if (currentAGCAtt == 15)
-					currentAGCAtt = 26;
+				isNeedKeyUpCheck = false;	//hold to repeat
+				if (chkKey == KEY_UP)
+					SI4735_frequencyUp();
+				else if (chkKey == KEY_DOWN)
+					SI4735_frequencyDown();
+				else if (NowMode >= MODE_LSB)
+					HF_FineTune(dir);
 				else
-					currentAGCAtt = 0;
-      			// siwtch on/off ACG; AGC Index = 0. It means Minimum attenuation (max gain)
-				disableAgc = 1;
-				SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);
-				WaitKeyUp();
+				{
+					SetSI4735ChangeStep(dir > 0);
+					isNeedKeyUpCheck = true;
+				}
 			}
-			*/
-			else if (chkKey == KEY_1 || chkKey == KEY_4)
+
+			if (chkKey == KEY_EXIT)
 			{
-      			currentBFO += currentBFOStep * (chkKey == KEY_4 ? -1 : 1 );
-				//SI4735_setSSBBfo2(currentBFO);
-			}
-			else if (chkKey == KEY_EXIT)
-			{
-				keyPressTime = GetKeyPressTime(80);
 				SI4735_setVolume(HF_DualWatch ? HF_DualVol : 0);
 
 				if (! HF_DualWatch)
@@ -1196,120 +1269,11 @@ void CEC_Radio_Work(void)
 					AUDIO_AudioPathOff();
 				}
 				LoadSaveConfig(false);	//SAVE
+				WaitKeyUp();
+				gRequestDisplayScreen = DISPLAY_MAIN;	//redraw the normal radio screen
+				gUpdateStatus = true;
 				return;
 			}
-			//2024.04.05  VERSION 0.44
-			else if (chkKey <= 9)
-			{
-				//DIRECT KEY PAD INPUT
-				uint32_t _timeOutValue = millis10();
-				//28075//
-				//19532
-				uint8_t arFreq[7] = {"------"};
-				uint8_t inputIndex = 0;
-				uint8_t isChanged = 1;
-
-				//uint8_t NowMode = 0;	//0:FM, 1:AM, 2:LSB, 3:USB, 4: CW (USB - 1KHz)
-				//arFreq[7]
-				if (NowMode == 0)
-					arFreq[3] = '.';
-				else
-					arFreq[2] = '.';
-
-				while(millis10() < (_timeOutValue + 1000))
-				{
-					//sprintf(tmpBuff, NowMode == MODE_FM ? "%4u.%02u" : "%3u.%03u", tmpFreq / freqScaleDiv, (tmpFreq) % freqScaleDiv);
-					//UI_DisplayFrequency(tmpBuff, 20, 1, false);
-					if (isChanged)
-					{
-						memset(gFrameBuffer[1] + 33, 0, 70);
-						memset(gFrameBuffer[2] + 33, 0, 70);
-
-						UI_DisplayFrequency(arFreq, 33, 1, false);
-						ST7565_BlitFullScreen();
-						//delay(300);
-						WaitKeyUp();
-						isChanged = 0;
-					}
-
-					KEY_Code_t tmpKey = KEYBOARD_Poll();
-					if (tmpKey != KEY_INVALID)
-					{
-						if (tmpKey <= KEY_9)
-						{
-							if (arFreq[inputIndex] == '.')
-								inputIndex++;
-
-							arFreq[inputIndex++] = tmpKey + '0';
-						}
-
-						/*
-						else if (tmpKey == KEY_STAR && inputIndex < 2)
-						{
-							if (inputIndex == 0)
-								arFreq[1] = '0';
-							else if (inputIndex == 1)
-								arFreq[1] = arFreq[0];
-
-							arFreq[0] = '0';
-
-							inputIndex = 3;
-						}
-						*/
-						else if (tmpKey == KEY_EXIT)
-						{
-							/*
-							if (inputIndex == 0)
-							{
-								isNeedKeyUpCheck = 1;
-								break;
-							}
-							else
-							{
-								arFreq[--inputIndex] = '-';
-							}
-							*/
-							isNeedKeyUpCheck = 1;
-							break;
-						}
-
-						_timeOutValue = millis10();
-						isChanged = 1;
-
-						if (inputIndex == 6)	//Complete Input
-						{
-							//7000, 10800
-							//uint8_t arFreq[7] = {"--.---"};
-							//memcpy(arFreq +2, arFreq + 3, 3);
-							//arFreq[5] = 0;
-							//64036
-							uint16_t textFreq = (arFreq[0] - '0') * 10000 + (arFreq[1] - '0') * 1000 + (arFreq[NowMode == 0 ? 2 : 3] - '0') * 100 + (arFreq[4] - '0') * 10 + (arFreq[5] - '0');
-							//uint16_t textFreq = (arFreq[0] - '0') * 10000 + (arFreq[1] - '0') * 1000;
-
-							//64056
-							/*
-							if (NowMode == 0)
-								textFreq += (arFreq[2] - '0') * 100 + (arFreq[4] - '0') * 10 + (arFreq[5] - '0');
-							else
-								textFreq += (arFreq[3] - '0') * 100 + (arFreq[4] - '0') * 10 + (arFreq[5] - '0');
-								*/
-
-							SI4735_setFrequency(textFreq);  //swband[_newIndex].currentFreq);
-							gAskToSave = 1;
-							//isAutoSave = 1;
-							isNeedKeyUpCheck = 1;
-
-							break;
-						}
-
-					}
-					delay(20);
-				}
-			}
-
-			//END OF 2024.04.04 VERSION 0.44
-
-
 
 			SetSSBConfig();
 			refreshCount = 0;

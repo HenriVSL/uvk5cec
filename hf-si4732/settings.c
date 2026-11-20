@@ -295,6 +295,7 @@ void SETTINGS_InitEEPROM(void)
 	CW_Tone 		 = Data[3] < 150 ? Data[3] : 70;  				// Default 700Hz
     HF_DualVol	     = Data[6] < 64 ? Data[6] : 63;  				// HF Dual Watch HF Volume
 	HF_DualWatch 	 = Data[7] < 3 ? Data[7] : 0;  				// HF Dual Watch
+	HF_BootMode 	 = Data[5] == 1;  							// Boot to HF mode (old images store 0xFF)
 
 #ifdef ENABLE_CEC_CWTX
 	CW_KeyType 		 = Data[1] < 7 ? Data[1] : 0;  					// Default Keypad Paddle
@@ -655,7 +656,7 @@ void SETTINGS_SaveSettings(void)
 #endif	
 	State[3] = CW_Tone;
 
-	State[5] = 0xFF;
+	State[5] = HF_BootMode;
 	State[6] = HF_DualVol;
 	State[7] = HF_DualWatch;  // HF Dual Watch
 

@@ -313,6 +313,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 			case MENU_NOAA_S:
 		#endif
 		
+		case MENU_HFBOOT:
 		case MENU_HFDUALWATCH:
 		case MENU_350TX:
 		case MENU_200TX:
@@ -496,6 +497,9 @@ void MENU_AcceptSetting(void)
 			RADIO_SetupRegisters(false);
 			break;
 
+		case MENU_HFBOOT:
+			HF_BootMode = gSubMenuSelection;
+			break;
 		case MENU_HFDUALWATCH:	//
 			HF_DualWatch = gSubMenuSelection;
 			break;
@@ -1025,6 +1029,9 @@ void MENU_ShowCurrentSetting(void)
 			gSubMenuSelection = CW_Tone;
 			break;
 
+		case MENU_HFBOOT:
+			gSubMenuSelection = HF_BootMode;
+			break;
 		case MENU_HFDUALWATCH:	//ICOM, YAESU ABOUT MAX 1000Khz
 			gSubMenuSelection = HF_DualWatch;
 			break;
@@ -1658,6 +1665,12 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 
 	if (!gIsInSubMenu)
 	{
+		if (UI_MENU_GetCurrentMenuId() == MENU_HFRADIO)
+		{
+			CEC_Radio_Work();
+			return;
+		}
+
 		#ifdef ENABLE_VOICE
 			if (UI_MENU_GetCurrentMenuId() != MENU_SCR)
 				gAnotherVoiceID = MenuList[gMenuCursor].voice_id;

@@ -143,6 +143,7 @@ extern uint8_t CW_TXDelay;     //[EEPROM] * 100 milisecond
 extern uint8_t CW_SPEED;
 extern uint8_t HF_DualWatch;
 extern uint8_t HF_DualVol;
+extern uint8_t HF_BootMode;
 
 extern uint8_t CEC_LiveSeekMode;   //0:NONE, 1:LIVE, 2:LIVE+1, 3:LIVE+2
 extern uint8_t SSTV_LCD_Start_Timer;
