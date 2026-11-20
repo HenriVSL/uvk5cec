@@ -54,7 +54,7 @@ uint8_t restoreBandwidthIdx;
 uint8_t isAutoSave = 0;
 
 //const char *bandwitdth[] = {"6", "4", "3", "2", "1", "1.8", "2.5"};
-const char *bandwitdth[] = {"1.2", "2.2", "3.0", "4.0", "0.5", "1.0"};
+static const char bandwitdth[][4] = {"1.2", "2.2", "3.0", "4.0", "0.5", "1.0"};
 
 uint8_t currentAGCAtt = 0;
 
@@ -81,9 +81,12 @@ uint16_t CurrentFMFreq = 9310;
 uint16_t CurrentAMFreq = 14074;
 //uint16_t CurrentSSBFreq = 14074;
 //uint8_t CurrentBandIndex = 0;
-uint8_t AMFreqStep = 2;	//10
-uint8_t SSBFreqStep = 0; //1
-uint8_t FMFreqStep = 1;	//10
+// step index per mode class: [0] FM (10kHz), [1] AM (10kHz), [2] LSB/USB/CW (1kHz)
+static uint8_t freqStepIdx[3] = {1, 2, 0};
+#define FMFreqStep	freqStepIdx[0]
+#define AMFreqStep	freqStepIdx[1]
+#define SSBFreqStep	freqStepIdx[2]
+#define NowStepIdx	freqStepIdx[NowMode < 2 ? NowMode : 2]
 bool disableAgc = true;
 
 
@@ -100,8 +103,6 @@ bool disableAgc = true;
 typedef struct {
   uint8_t   BandType;
   uint8_t   currentMode;  //0 : AM, 1:LSB, 2:USB
-  uint16_t  minimumFreq;
-  uint16_t  maximumFreq;
   char bandName[5];
 } Band;
 
@@ -165,31 +166,39 @@ Band swband[] = {
 */
 
 //reduce 23 -> 20 for using FM Radio Frequency EEPROM, Split Current Freq
+// The 20 bands are contiguous, so only the lower edges are stored:
+// band i covers bandEdge[i] .. bandEdge[i + 1] - 1 (150 .. 30000 kHz in total).
+static const uint16_t bandEdge[21] = {
+    150,   472,   480,  1800,  2001,  3500,  4001,  7000,  7301, 10000,
+  10501, 14000, 14500, 18000, 18200, 21000, 21500, 24800, 25001, 28000,
+  30001
+};
+
 const Band swband[] = {
-  {BAND_HAM, MODE_LSB, 150, 471, "L.F"},
-  {BAND_HAM, MODE_LSB, 472, 479, "630M"},
-  {BAND_BCAST, MODE_AM, 480, 1799, "AMMF"},
-  {BAND_HAM, MODE_LSB, 1800, 2000, "160M"},
-  {BAND_BCAST, MODE_AM, 2001, 3499, "120M"},
-  {BAND_HAM, MODE_LSB, 3500, 4000, "80M"},
+  {BAND_HAM, MODE_LSB, "L.F"},		//   150 -   471
+  {BAND_HAM, MODE_LSB, "630M"},		//   472 -   479
+  {BAND_BCAST, MODE_AM, "AMMF"},	//   480 -  1799
+  {BAND_HAM, MODE_LSB, "160M"},		//  1800 -  2000
+  {BAND_BCAST, MODE_AM, "120M"},	//  2001 -  3499
+  {BAND_HAM, MODE_LSB, "80M"},		//  3500 -  4000
 //  {BAND_BCAST, 4001,  6999,  4700,  1, MOD_AM,  0, "60M"},
-  {BAND_BCAST, MODE_AM, 4001, 6999, "60M"},
+  {BAND_BCAST, MODE_AM, "60M"},		//  4001 -  6999
 //  {BAND_BCAST, 5201,  6999,  5700,  1, MOD_AM,  0, "49M"},
-  {BAND_HAM, MODE_LSB, 7000, 7300, "40M"},
-  {BAND_BCAST, MODE_AM, 7301, 9999, "35M"},
-  {BAND_HAM, MODE_LSB, 10000, 10500, "30M"},
-  {BAND_BCAST, MODE_AM, 10501, 13999, "25M"},
+  {BAND_HAM, MODE_LSB, "40M"},		//  7000 -  7300
+  {BAND_BCAST, MODE_AM, "35M"},		//  7301 -  9999
+  {BAND_HAM, MODE_LSB, "30M"},		// 10000 - 10500
+  {BAND_BCAST, MODE_AM, "25M"},		// 10501 - 13999
 //  {BAND_BCAST,13000, 13999, 13500,  1, MOD_AM,  0, "22M"},
-  {BAND_HAM, MODE_USB, 14000, 14499, "20M"},
-  {BAND_BCAST, MODE_AM, 14500, 17999, "19M"},
+  {BAND_HAM, MODE_USB, "20M"},		// 14000 - 14499
+  {BAND_BCAST, MODE_AM, "19M"},		// 14500 - 17999
 //  {BAND_BCAST,17000, 17999, 17500,  1, MOD_AM,  0, "18M"},
-  {BAND_HAM, MODE_USB, 18000, 18199, "17M"},
-  {BAND_BCAST, MODE_AM, 18200, 20999, "16M"},
-  {BAND_HAM, MODE_USB, 21000, 21499, "15M"},
-  {BAND_BCAST, MODE_AM, 21500, 24799, "13M"},
-  {BAND_HAM, MODE_USB, 24800, 25000, "12M"},
-  {BAND_HAM, MODE_AM, 25001, 27999, "11M"},
-  {BAND_HAM, MODE_USB, 28000, 30000, "10M"},
+  {BAND_HAM, MODE_USB, "17M"},		// 18000 - 18199
+  {BAND_BCAST, MODE_AM, "16M"},		// 18200 - 20999
+  {BAND_HAM, MODE_USB, "15M"},		// 21000 - 21499
+  {BAND_BCAST, MODE_AM, "13M"},		// 21500 - 24799
+  {BAND_HAM, MODE_USB, "12M"},		// 24800 - 25000
+  {BAND_HAM, MODE_AM, "11M"},		// 25001 - 27999
+  {BAND_HAM, MODE_USB, "10M"},		// 28000 - 30000
 };
 
 uint16_t CurrentFreqs[20];
@@ -201,7 +210,7 @@ int8_t CEC_FindBandIndex(uint16_t srcFreq)
 {
     for (int i = 0; i < 20; i++)
     {
-		if (srcFreq >= swband[i].minimumFreq && srcFreq <= swband[i].maximumFreq)
+		if (srcFreq >= bandEdge[i] && srcFreq < bandEdge[i + 1])
 			return i;
     }
 
@@ -255,18 +264,10 @@ void CEC_Radio_DrawScreen(void)
 	{
 		CurrentFMFreq = tmpFreq;
 		freqScaleDiv = 100;
-		dispStep = FMFreqStep;
 	}
-	else if (NowMode == 1)	//AM
-	{
+	else	//AM, LSB, USB, CW
 		CurrentAMFreq = tmpFreq;
-		dispStep = AMFreqStep;
-	}
-	else	//LSB, USB, CW
-	{
-		CurrentAMFreq = tmpFreq;
-		dispStep = SSBFreqStep;
-	}
+	dispStep = NowStepIdx;
 	/*
 	else if (NowMode == 1)	//AM
 	{
@@ -367,27 +368,10 @@ void CEC_Radio_DrawScreen(void)
 		drawStepUnderLineX = 61;
 		*/
 
-	switch (dispStep)
-	{
-		case 0 : 
-			drawStepUnderLineX = 88;
-			break;
-		case 1 : 
-			drawStepUnderLineX = 81;
-			break;
-		case 2 : 
-			drawStepUnderLineX = 74;
-			break;
-		case 3 : 
-			drawStepUnderLineX = 67;
-			break;
-		case 4 : 
-			drawStepUnderLineX = 61;
-			break;
-		case 5 : 
-			drawStepUnderLineX = 53;
-			break;
-	}
+	// x of the digit underline for step index 0..6 (1, 5, 10, 50, 100, 500, 1000)
+	static const uint8_t stepUnderLineX[] = {88, 81, 74, 67, 61, 53, 46};
+	if (dispStep < sizeof(stepUnderLineX))
+		drawStepUnderLineX = stepUnderLineX[dispStep];
 
 
 	//else
@@ -448,14 +432,7 @@ void AppllyStep(uint8_t _nowStep)
 
 void SetSI4735ChangeStep(uint8_t isIncrease)
 {
-	uint8_t nowStep = 0;
-
-	if (NowMode == 0)
-		nowStep = FMFreqStep;
-	else if (NowMode == 1)
-		nowStep = AMFreqStep;
-	else	//SSB
-		nowStep = SSBFreqStep;
+	uint8_t nowStep = NowStepIdx;
 
 
 	if (isIncrease == 1)	//Increase
@@ -472,7 +449,7 @@ void SetSI4735ChangeStep(uint8_t isIncrease)
 	}
 
 	//other skip
-	uint16_t lstStep[] = {1, 5, 10, 50, 100, 500, 1000};
+	static const uint16_t lstStep[] = {1, 5, 10, 50, 100, 500, 1000};
 	//SI4735_setFrequencyStep(nowStep);
 	//AppllyStep(nowStep);
 	//currentStep = 1;
@@ -482,21 +459,11 @@ void SetSI4735ChangeStep(uint8_t isIncrease)
 
 	uint16_t tmpFreq = SI4735_getFrequency();
 
+	NowStepIdx = nowStep;
 	if (NowMode == 0)
-	{
-		FMFreqStep = nowStep;
 		CurrentFMFreq = tmpFreq;
-	}
-	else if (NowMode == 1)
-	{
-		AMFreqStep = nowStep;
+	else	//AM, SSB
 		CurrentAMFreq = tmpFreq;
-	}
-	else	//SSB
-	{
-		SSBFreqStep = nowStep;
-		CurrentAMFreq = tmpFreq;
-	}
 
 
 	//if (NowMode)
@@ -713,8 +680,8 @@ void LoadSaveConfig(bool isLoad)
         EEPROM_ReadBuffer(0x0E40, CurrentFreqs, sizeof(CurrentFreqs));
         for (int i = 0; i < 20; i++)
         {
-            if (CurrentFreqs[i] > swband[i].maximumFreq || CurrentFreqs[i] < swband[i].minimumFreq)
-                CurrentFreqs[i] = swband[i].minimumFreq + ((swband[i].maximumFreq - swband[i].minimumFreq) / 2);
+            if (CurrentFreqs[i] >= bandEdge[i + 1] || CurrentFreqs[i] < bandEdge[i])
+                CurrentFreqs[i] = bandEdge[i] + ((bandEdge[i + 1] - 1 - bandEdge[i]) / 2);
         }
 
 		//Load Setting values
@@ -1262,8 +1229,12 @@ void CEC_Radio_Work(void)
 
 				if (! HF_DualWatch)
 				{
-					GPIO_SetBit(&GPIOB->DATA, GPIOB_PIN_BK1080);
+					GPIO_SetBit(&GPIOB->DATA, GPIOB_PIN_BK1080);	// holds the SI4732 in reset
 					AUDIO_AudioPathOff();
+					// The chip loses its power-up state and SSB patch while held in reset, so the
+					// next entry must initialise it again even if HF dual watch is enabled meanwhile.
+					// This also keeps radio.c/audio.h/menu.c from treating it as running.
+					isNeed4732Init = true;
 				}
 				LoadSaveConfig(false);	//SAVE
 				WaitKeyUp();

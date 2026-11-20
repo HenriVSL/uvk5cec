@@ -108,20 +108,15 @@ SI4735::SI4735()
       return 0;
     }
 
+    // Callers never read more bytes than they requested, so no underrun check is needed
     uint8_t Wire_Read()
     {
-        if (_rxBufferIndex < _rxBufferBytesRead)
-            return _rxBuffer[_rxBufferIndex++];
-        else
-            return -1;
+        return _rxBuffer[_rxBufferIndex++];
     }
 
+    // Callers send at most 8 bytes per transmission, so no overflow check is needed
     int Wire_Write(uint8_t writeByte)
     {
-        if (_txBufferIndex >= _txBufferSize) {
-            return 0;
-        }
-
         _txBuffer[_txBufferIndex++] = writeByte;
         return 1;
     }
@@ -533,6 +528,23 @@ void waitToSend()
     } while (!(Wire_Read() & 0B10000000));
 }
 
+/**
+ * @brief Waits for CTS, then sends a short command: cmd followed by (n - 1) of arg1, arg2.
+ * @details Same I2C traffic as the open-coded waitToSend/Wire_BeginTransmission/Wire_Write/
+ *          Wire_EndTransmission sequence it replaces; it just saves the repeated call sites.
+ */
+static void sendShortCommand(uint8_t n, uint8_t cmd, uint8_t arg1, uint8_t arg2)
+{
+    waitToSend();
+    Wire_BeginTransmission(deviceAddress);
+    Wire_Write(cmd);
+    if (n > 1)
+        Wire_Write(arg1);
+    if (n > 2)
+        Wire_Write(arg2);
+    Wire_EndTransmission();
+}
+
 /** @defgroup group07 Device Setup and Start up */
 
 /**
@@ -615,12 +627,7 @@ void setPowerUp(uint8_t CTSIEN, uint8_t GPO2OEN, uint8_t PATCH, uint8_t XOSCEN, 
 void radioPowerUp(void)
 {
     // delayMicroseconds(1000);
-    waitToSend();
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(POWER_UP);
-    Wire_Write(powerUp.raw[0]); // Content of ARG1
-    Wire_Write(powerUp.raw[1]); // COntent of ARG2
-    Wire_EndTransmission();
+    sendShortCommand(3, POWER_UP, powerUp.raw[0], powerUp.raw[1]); // ARG1, ARG2
     // Delay at least 500 ms between powerup command and first tune command to wait for
     // the oscillator to stabilize if XOSCEN is set and crystal is used as the RCLK.
     waitToSend();
@@ -630,11 +637,8 @@ void radioPowerUp(void)
     // if (audioMuteMcuPin >= 0)
     //     setHardwareAudioMute(false);
 
-    if (currentClockType == XOSCEN_RCLK)
-    {
-        setRefClock(refClock);
-        setRefClockPrescaler(refClockPrescale, refClockSourcePin);
-    }
+    // The radio always runs from its 32.768 kHz crystal (SI4735_setup2 passes XOSCEN_CRYSTAL),
+    // so the external RCLK setup (setRefClock/setRefClockPrescaler) is never needed here.
 }
 
 /**
@@ -668,10 +672,7 @@ void powerDown(void)
     // if (audioMuteMcuPin >= 0)
     //     setHardwareAudioMute(true);
 
-    waitToSend();
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(POWER_DOWN);
-    Wire_EndTransmission();
+    sendShortCommand(1, POWER_DOWN, 0, 0);
     delayMicroseconds(2500);
 }
 
@@ -686,11 +687,7 @@ void powerDown(void)
  */
 void getFirmware(void)
 {
-    waitToSend();
-
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(GET_REV);
-    Wire_EndTransmission();
+    sendShortCommand(1, GET_REV, 0, 0);
 
     do
     {
@@ -1175,16 +1172,11 @@ void SI4735_getStatus(uint8_t INTACK, uint8_t CANCEL)
         limitResp = 6;
     }
 
-    waitToSend();
-
     status.arg.INTACK = INTACK;
     status.arg.CANCEL = CANCEL;
     status.arg.RESERVED2 = 0;
 
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(cmd);
-    Wire_Write(status.raw);
-    Wire_EndTransmission();
+    sendShortCommand(2, cmd, status.raw, 0);
     // Reads the current status (including current frequency).
     do
     {
@@ -1275,13 +1267,7 @@ void SI4735_setAutomaticGainControl(uint8_t AGCDIS, uint8_t AGCIDX)
     agc.arg.AGCDIS = AGCDIS;
     agc.arg.AGCIDX = AGCIDX;
 
-    waitToSend();
-
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(cmd);
-    Wire_Write(agc.raw[0]);
-    Wire_Write(agc.raw[1]);
-    Wire_EndTransmission();
+    sendShortCommand(3, cmd, agc.raw[0], agc.raw[1]);
 
     waitToSend();
 }
@@ -1340,13 +1326,8 @@ void SI4735_getCurrentReceivedSignalQuality(uint8_t INTACK)
         sizeResponse = 6; // Check it
     }
 
-    waitToSend();
-
     arg = INTACK;
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(cmd);
-    Wire_Write(arg); // send B00000001
-    Wire_EndTransmission();
+    sendShortCommand(2, cmd, arg, 0);
 
     // Check it
     // do
@@ -3009,28 +2990,11 @@ void setAudioMute(bool off)
  */
 void SI4735_setSSBBfo2(int offset)
 {
-
-    si47x_property property;
-    si47x_frequency bfo_offset;
-
     if (currentTune == FM_TUNE_FREQ) // Only for AM/SSB mode
         return;
 
-    waitToSend();
-
-    property.value = SSB_BFO;
-    bfo_offset.value = offset;
-
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(SET_PROPERTY);
-    Wire_Write(0x00);                  // Always 0x00
-    Wire_Write(property.raw.byteHigh); // High byte first
-    Wire_Write(property.raw.byteLow);  // Low byte after
-    Wire_Write(bfo_offset.raw.FREQH);  // Offset freq. high byte first
-    Wire_Write(bfo_offset.raw.FREQL);  // Offset freq. low byte first
-
-    Wire_EndTransmission();
-    delayMicroseconds(550);
+    // Same bytes as the open-coded SET_PROPERTY sequence it replaces
+    sendProperty(SSB_BFO, (uint16_t)offset);
 }
 
 /**
@@ -3254,19 +3218,8 @@ void SI4735_setSSB(uint16_t fromFreq, uint16_t toFreq, uint16_t initialFreq, uin
  */
 void sendSSBModeProperty()
 {
-    si47x_property property;
-    property.value = SSB_MODE;
-    waitToSend();
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(SET_PROPERTY);
-    Wire_Write(0x00);                  // Always 0x00
-    Wire_Write(property.raw.byteHigh); // High byte first
-    Wire_Write(property.raw.byteLow);  // Low byte after
-    Wire_Write(currentSSBMode.raw[1]); // SSB MODE params; freq. high byte first
-    Wire_Write(currentSSBMode.raw[0]); // SSB MODE params; freq. low byte after
-
-    Wire_EndTransmission();
-    delayMicroseconds(550);
+    // raw[1] is sent first (high byte), raw[0] second, exactly like sendProperty
+    sendProperty(SSB_MODE, (currentSSBMode.raw[1] << 8) | currentSSBMode.raw[0]);
 }
 
 /**
@@ -3358,14 +3311,11 @@ si47x_firmware_query_library queryLibraryId()
 
     // delay(500);
 
-    waitToSend();
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(POWER_UP);
     //ianlee 2024.01.30
-    Wire_Write(0b00011111);          // Set to Read Library ID, disable interrupt; disable GPO2OEN; boot normaly; enable External Crystal Oscillator  .
+    // ARG1 0b00011111: Set to Read Library ID, disable interrupt; disable GPO2OEN; boot normaly; enable External Crystal Oscillator  .
     //Wire_Write(0b00001111);          // Set to Read Library ID, disable interrupt; disable GPO2OEN; boot normaly; enable External Crystal Oscillator  .
-    Wire_Write(SI473X_ANALOG_AUDIO); // Set to Analog Line Input.
-    Wire_EndTransmission();
+    // ARG2 SI473X_ANALOG_AUDIO: Set to Analog Line Input.
+    sendShortCommand(3, POWER_UP, 0b00011111, SI473X_ANALOG_AUDIO);
 
     do
     {
@@ -3395,14 +3345,11 @@ si47x_firmware_query_library queryLibraryId()
  */
 void patchPowerUp()
 {
-    waitToSend();
-    Wire_BeginTransmission(deviceAddress);
-    Wire_Write(POWER_UP);
     //ianlee 2024.01.30
-    Wire_Write(0b00110001);          // This is a condition for loading the patch: Set to AM, Enable External Crystal Oscillator; Set patch enable; GPO2 output disabled; CTS interrupt disabled. You can change this calling setSSB.
+    // ARG1 0b00110001: This is a condition for loading the patch: Set to AM, Enable External Crystal Oscillator; Set patch enable; GPO2 output disabled; CTS interrupt disabled. You can change this calling setSSB.
     //Wire_Write(0b00100001);          // This is a condition for loading the patch: Set to AM, Enable External Crystal Oscillator; Set patch enable; GPO2 output disabled; CTS interrupt disabled. You can change this calling setSSB.
-    Wire_Write(SI473X_ANALOG_AUDIO); // This is a condition for loading the patch: Set to Analog Output. You can change this calling setSSB.
-    Wire_EndTransmission();
+    // ARG2 SI473X_ANALOG_AUDIO: This is a condition for loading the patch: Set to Analog Output. You can change this calling setSSB.
+    sendShortCommand(3, POWER_UP, 0b00110001, SI473X_ANALOG_AUDIO);
     delay(maxDelayAfterPouwerUp);
 }
 
@@ -3561,23 +3508,23 @@ bool downloadPatch(const uint8_t *ssb_patch_content, const uint16_t ssb_patch_co
  * @param cmd_0x15                  Array of lines where the first byte of each patch content line is 0x15
  * @param cmd_0x15_size             Array size
  */
-bool downloadCompressedPatch(const uint8_t *ssb_patch_content, const uint16_t ssb_patch_content_size, const uint16_t *cmd_0x15, const int16_t cmd_0x15_size)
+bool downloadCompressedPatch(const uint8_t *ssb_patch_content, const uint16_t ssb_patch_content_size, const uint8_t *cmd_0x15, const int16_t cmd_0x15_size)
 {
     uint8_t cmd, content;
     uint16_t command_line = 0;
+    // cmd_0x15 holds ascending line numbers as 8-bit deltas, ending with a
+    // sentinel delta that jumps past the last line (see patch_ssb_compressed.h)
+    uint16_t next_0x15 = *cmd_0x15++;
+    (void)cmd_0x15_size;
     // Send patch to the SI4735 device
     for (uint16_t offset = 0; offset < ssb_patch_content_size; offset += 7)
     {
         // Checks if the current line starts with 0x15
         cmd = 0x16;
-        for (uint16_t i = 0; i < cmd_0x15_size / sizeof(uint16_t); i++)
+        if (command_line == next_0x15)
         {
-            //if (pgm_read_word_near(cmd_0x15 + i) == command_line)
-            if (cmd_0x15[i] == command_line)
-            { // it needs performance improvement: save the last "i" value to be used next time
-                cmd = 0x15;
-                break;
-            }
+            cmd = 0x15;
+            next_0x15 += *cmd_0x15++;
         }
         Wire_BeginTransmission(deviceAddress);
         Wire_Write(cmd);
@@ -3632,7 +3579,7 @@ void loadPatch(const uint8_t *ssb_patch_content, const uint16_t ssb_patch_conten
  * @param cmd_0x15_size             Array size
  * @param ssb_audiobw              SSB Audio bandwidth; 0 = 1.2kHz (default); 1=2.2kHz; 2=3kHz; 3=4kHz; 4=500Hz; 5=1kHz.
  */
-void SI4735_loadCompressedPatch(const uint8_t *ssb_patch_content, const uint16_t ssb_patch_content_size, const uint16_t *cmd_0x15, const int16_t cmd_0x15_size, uint8_t ssb_audiobw)
+void SI4735_loadCompressedPatch(const uint8_t *ssb_patch_content, const uint16_t ssb_patch_content_size, const uint8_t *cmd_0x15, const int16_t cmd_0x15_size, uint8_t ssb_audiobw)
 {
     queryLibraryId();
     patchPowerUp();

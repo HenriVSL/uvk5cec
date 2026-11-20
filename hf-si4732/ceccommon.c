@@ -649,7 +649,7 @@ uint8_t dBuVToSignalLength15(uint8_t _srcValue)
     //uint8_t _baseMeterValue[] = {1, 2,  4, 10, 16, 22, 28, 34,  44,   54, 64,  74,  84,   94, 104}; //, 114};
     //CHANGED MAX 50 (SI4732 MAX 50)
     //                    4Under 1  4  5   6    7  8   9   +3  +5  +10                   +20  +30
-    uint8_t _baseMeterValue[] = {2, 4, 10, 16, 22, 28, 34, 37, 39, 44, 45, 47,  48,  50, 54}; //, 114};
+    static const uint8_t _baseMeterValue[] = {2, 4, 10, 16, 22, 28, 34, 37, 39, 44, 45, 47,  48,  50, 54}; //, 114};
     for (int i = sizeof(_baseMeterValue) - 1; i >= 0; i--)
     {
         if (_srcValue >= _baseMeterValue[i])
