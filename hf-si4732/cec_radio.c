@@ -650,6 +650,8 @@ void WaitKeyUp()
 	}
 }
 
+static uint8_t hfSavedMode = 1;	//MODE_AM, mode to start in after the SI4732 init
+
 void LoadSaveConfig(bool isLoad)
 {
 	//STEP
@@ -699,7 +701,11 @@ void LoadSaveConfig(bool isLoad)
 		else
 			CurrentAMFreq = SI4735_ROM1.amFreq;
 
-		bandwidthIdx =   SI4735_ROM1.bandwidth < MAX_BANDWIDTH_COUNT ? SI4735_ROM1.bandwidth : DEFAULT_BANDWIDTH_INDEX;
+		//bandwidth byte : low nibble SSB bandwidth, high nibble last mode + 1 (0 on older images = AM)
+		bandwidthIdx =   (SI4735_ROM1.bandwidth & 0x0F) < MAX_BANDWIDTH_COUNT ? (SI4735_ROM1.bandwidth & 0x0F) : DEFAULT_BANDWIDTH_INDEX;
+		hfSavedMode = (SI4735_ROM1.bandwidth >> 4) - 1;
+		if (hfSavedMode > MODE_CW)
+			hfSavedMode = MODE_AM;
 
 		disableAgc = SI4735_ROM1.agcInfo & 0x01;
 		currentAGCAtt = (SI4735_ROM1.agcInfo >> 1) & 0x7F;
@@ -723,7 +729,7 @@ void LoadSaveConfig(bool isLoad)
 
 		SI4735_ROM1.fmFreq = CurrentFMFreq;
 		SI4735_ROM1.amFreq = CurrentAMFreq;
-		SI4735_ROM1.bandwidth = bandwidthIdx;
+		SI4735_ROM1.bandwidth = (NowMode == MODE_CW ? restoreBandwidthIdx : bandwidthIdx) | ((NowMode + 1) << 4);
 		SI4735_ROM1.agcInfo = (currentAGCAtt << 1) | (disableAgc & 0x01);
 		SI4735_ROM1.amStep = AMFreqStep;
 		SI4735_ROM1.ssbStep = SSBFreqStep;
@@ -1160,6 +1166,8 @@ void CEC_Radio_Work(void)
 		delay(300);
 		SetSI4735Mode(MODE_AM);
 		delay(100);
+		if (hfSavedMode != MODE_AM)	//back to the mode used last time
+			SetSI4735Mode(hfSavedMode);
 	}
 
 
