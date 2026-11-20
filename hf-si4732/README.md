@@ -34,7 +34,19 @@ Verified build on 2026-09-15 (produces `firmware.bin`).
 ## Menu driven HF mod (CEC_0.51HF-M1)
 
 This fork replaces the "remember which key does what" HF controls with a setup menu
-and on-screen key hints. VOX and the flashlight are disabled to make room in flash.
+and on-screen key hints.
+
+Features compiled out by default to make room in flash (set to 1 in the Makefile, or
+`make ENABLE_xxx=1`, to bring one back):
+
+| Option | Removes | Saves |
+| --- | --- | --- |
+| ENABLE_VOX | VOX | ~750 B |
+| ENABLE_FLASHLIGHT | Flashlight | ~200 B |
+| ENABLE_SCANNER | CTCSS/DCS code scanner (F+*, * in RxCTCS/RxDCS menu) and the F+4 frequency scanner. Channel/VFO scanning stays | ~2.9 KB |
+| ENABLE_ROGER | Roger / MDC end of TX beep, Roger menu | ~360 B |
+| ENABLE_WELCOME | Power on message / voltage screen, POnMsg menu | ~400 B |
+| ENABLE_DTMF_TX | DTMF sending: PTT ID menu, DTMF input with *, keypad tones while transmitting. SIDE2 1750 Hz tone burst during TX stays | ~920 B |
 
 ### Getting into HF mode
 

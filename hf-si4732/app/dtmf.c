@@ -80,6 +80,7 @@ void DTMF_clear_RX(void)
 
 void DTMF_SendEndOfTransmission(void)
 {
+#ifdef ENABLE_DTMF_TX
 	if (gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO) {
 		BK4819_PlaySingleTone(2475, 250, 28, gEeprom.DTMF_SIDE_TONE);
 	}
@@ -109,8 +110,9 @@ void DTMF_SendEndOfTransmission(void)
 		AUDIO_AudioPathOff();
 		gEnableSpeaker = false;
 	}
+#endif
 
-	BK4819_ExitDTMF_TX(true);
+	BK4819_ExitDTMF_TX(true);	//mute the mic for the CTCSS/DCS tail, needed even without DTMF
 }
 
 bool DTMF_ValidateCodes(char *pCode, const unsigned int size)
@@ -423,6 +425,10 @@ void DTMF_HandleRequest(void)
 
 void DTMF_Reply(void)
 {
+#ifndef ENABLE_DTMF_TX
+	gDTMF_ReplyState = DTMF_REPLY_NONE;
+}
+#else
 	uint16_t    Delay;
 #ifdef ENABLE_DTMF_CALLING
 	char        String[23];
@@ -507,3 +513,4 @@ void DTMF_Reply(void)
 
 	BK4819_ExitDTMF_TX(false);
 }
+#endif

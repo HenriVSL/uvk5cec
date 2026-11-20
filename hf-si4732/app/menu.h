@@ -30,9 +30,14 @@
 int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax);
 void MENU_AcceptSetting(void);
 void MENU_ShowCurrentSetting(void);
+#ifdef ENABLE_SCANNER
 void MENU_StartCssScan(void);
 void MENU_CssScanFound(void);
 void MENU_StopCssScan(void);
+#else
+static inline void MENU_StartCssScan(void) {}
+static inline void MENU_StopCssScan(void) {}
+#endif
 
 void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 

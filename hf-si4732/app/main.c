@@ -190,6 +190,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 
 			break;
 
+#ifdef ENABLE_SCANNER
 		case KEY_4:
 			gWasFKeyPressed          = false;
 
@@ -202,6 +203,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 			SCANNER_Start(false);
 			gRequestDisplayScreen = DISPLAY_SCANNER;
 			break;
+#endif
 
 		case KEY_5:
 			if(beep) {
@@ -644,6 +646,7 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
 	
 	if (!gWasFKeyPressed) // pressed without the F-key
 	{	
+#ifdef ENABLE_DTMF_TX
 		if (gScanStateDir == SCAN_OFF 
 #ifdef ENABLE_NOAA
 			&& !IS_NOAA_CHANNEL(gTxVfo->CHANNEL_SAVE)
@@ -663,6 +666,7 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
 			gRequestDisplayScreen = DISPLAY_MAIN;
 		}
 		else
+#endif
 			gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
 	}
 	else
@@ -676,11 +680,15 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
 		}				
 #endif
 
+#ifdef ENABLE_SCANNER
 		// scan the CTCSS/DCS code
 		gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
 		gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
 		SCANNER_Start(true);
 		gRequestDisplayScreen = DISPLAY_SCANNER;
+#else
+		gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+#endif
 	}
 	
 	gPttWasReleased = true;

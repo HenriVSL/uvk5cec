@@ -119,7 +119,9 @@ const t_menu_item MenuList[] =
 	{"MicBar", VOICE_ID_INVALID,                       MENU_MIC_BAR       },
 #endif
 	{"ChDisp", VOICE_ID_INVALID,                       MENU_MDF           }, // was "MDF"
+#ifdef ENABLE_WELCOME
 	{"POnMsg", VOICE_ID_INVALID,                       MENU_PONMSG        },
+#endif
 	{"BatTxt", VOICE_ID_INVALID,                       MENU_BAT_TXT       },
 	{"BackLt", VOICE_ID_INVALID,                       MENU_ABR           }, // was "ABR"
 	{"BLMin",  VOICE_ID_INVALID,                       MENU_ABR_MIN       },
@@ -129,7 +131,9 @@ const t_menu_item MenuList[] =
 #ifdef ENABLE_VOICE
 	{"Voice",  VOICE_ID_VOICE_PROMPT,                  MENU_VOICE         },
 #endif
+#ifdef ENABLE_ROGER
 	{"Roger",  VOICE_ID_INVALID,                       MENU_ROGER         },
+#endif
 	{"STE",    VOICE_ID_INVALID,                       MENU_STE           },
 	{"RP STE", VOICE_ID_INVALID,                       MENU_RP_STE        },
 	{"1 Call", VOICE_ID_INVALID,                       MENU_1_CALL        },
@@ -144,7 +148,9 @@ const t_menu_item MenuList[] =
 	{"UPCode", VOICE_ID_INVALID,                       MENU_UPCODE        },
 	{"DWCode", VOICE_ID_INVALID,                       MENU_DWCODE        },
 #endif	
+#ifdef ENABLE_DTMF_TX
 	{"PTT ID", VOICE_ID_INVALID,                       MENU_PTT_ID        },
+#endif
 #ifdef ENABLE_DTMF_CALLING
     {"D Resp", VOICE_ID_INVALID,                       MENU_D_RSP         },
 	{"D Hold", VOICE_ID_INVALID,                       MENU_D_HOLD        },
@@ -356,6 +362,7 @@ const char gSubMenu_D_RSP[][11] =
 };
 #endif
 
+#ifdef ENABLE_DTMF_TX
 const char* const gSubMenu_PTT_ID[] =
 {
 	"OFF",
@@ -364,7 +371,9 @@ const char* const gSubMenu_PTT_ID[] =
 	"UP+DOWN\nCODE",
 	"APOLLO\nQUINDAR"
 };
+#endif
 
+#ifdef ENABLE_WELCOME
 const char gSubMenu_PONMSG[][8] =
 {
 	"FULL",
@@ -372,13 +381,16 @@ const char gSubMenu_PONMSG[][8] =
 	"VOLTAGE",
 	"NONE"
 };
+#endif
 
+#ifdef ENABLE_ROGER
 const char gSubMenu_ROGER[][6] =
 {
 	"OFF",
 	"ROGER",
 	"MDC"
 };
+#endif
 
 const char gSubMenu_RESET[][4] =
 {
@@ -959,9 +971,11 @@ void UI_DisplayMenu(void)
 			sprintf(String, "%d*10ms", gSubMenuSelection);
 			break;
 #endif
+#ifdef ENABLE_DTMF_TX
 		case MENU_PTT_ID:
 			strcpy(String, gSubMenu_PTT_ID[gSubMenuSelection]);
 			break;
+#endif
 
 		case MENU_BAT_TXT:
 			strcpy(String, gSubMenu_BAT_TXT[gSubMenuSelection]);
@@ -977,13 +991,16 @@ void UI_DisplayMenu(void)
 			break;
 #endif
 
+#ifdef ENABLE_WELCOME
 		case MENU_PONMSG:
 			strcpy(String, gSubMenu_PONMSG[gSubMenuSelection]);
 			break;
-
+#endif
+#ifdef ENABLE_ROGER
 		case MENU_ROGER:
 			strcpy(String, gSubMenu_ROGER[gSubMenuSelection]);
 			break;
+#endif
 
 		case MENU_VOL:
 			sprintf(String, "%u.%02uV\n%u%%",

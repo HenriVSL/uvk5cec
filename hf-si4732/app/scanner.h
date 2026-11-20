@@ -46,12 +46,19 @@ extern SCAN_CssState_t   gScanCssState;
 extern uint8_t           gScanProgressIndicator;
 extern bool              gScanUseCssResult;
 
+#ifdef ENABLE_SCANNER
 void SCANNER_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 void SCANNER_Start(bool singleFreq);
 void SCANNER_Stop(void);
 void SCANNER_TimeSlice10ms(void);
 void SCANNER_TimeSlice500ms(void);
 bool SCANNER_IsScanning(void);
+#else
+static inline void SCANNER_Stop(void) {}
+static inline void SCANNER_TimeSlice10ms(void) {}
+static inline void SCANNER_TimeSlice500ms(void) {}
+static inline bool SCANNER_IsScanning(void) { return false; }
+#endif
 
 #endif
 

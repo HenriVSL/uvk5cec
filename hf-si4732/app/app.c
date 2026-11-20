@@ -80,7 +80,9 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 void (*ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld) = {
 	[DISPLAY_MAIN] = &MAIN_ProcessKeys,
 	[DISPLAY_MENU] = &MENU_ProcessKeys,
+#ifdef ENABLE_SCANNER
 	[DISPLAY_SCANNER] = &SCANNER_ProcessKeys,
+#endif
 
 #ifdef ENABLE_FMRADIO
 	[DISPLAY_FM] = &FM_ProcessKeys,
@@ -1799,9 +1801,13 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 			else
 			{
 
+#ifdef ENABLE_DTMF_TX
 				Code = DTMF_GetCharacter(Key - KEY_0);
 				if (Code == 0xFF)
 					goto Skip;
+#else
+				goto Skip;	//no DTMF keypad tones
+#endif
 
 				// transmit DTMF keys
 			}
@@ -1834,8 +1840,10 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 				if (Code == 0xFE)
 					BK4819_TransmitTone(gEeprom.DTMF_SIDE_TONE, 1750);
+#ifdef ENABLE_DTMF_TX
 				else
 					BK4819_PlayDTMFEx(gEeprom.DTMF_SIDE_TONE, Code);
+#endif
 			}
 		}
 #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)

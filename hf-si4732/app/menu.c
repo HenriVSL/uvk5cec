@@ -80,6 +80,7 @@ uint8_t gUnlockAllTxConfCnt;
 	}
 #endif
 
+#ifdef ENABLE_SCANNER
 void MENU_StartCssScan(void)
 {
 	SCANNER_Start(true);
@@ -114,6 +115,7 @@ void MENU_StopCssScan(void)
 	gUpdateDisplay = true;
 	gUpdateStatus = true;
 }
+#endif
 
 int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 {
@@ -237,15 +239,18 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 			*pMax = ARRAY_SIZE(gSubMenu_SC_REV) - 1;
 			break;
 
+#ifdef ENABLE_ROGER
 		case MENU_ROGER:
 			//*pMin = 0;
 			*pMax = ARRAY_SIZE(gSubMenu_ROGER) - 1;
 			break;
-
+#endif
+#ifdef ENABLE_WELCOME
 		case MENU_PONMSG:
 			//*pMin = 0;
 			*pMax = ARRAY_SIZE(gSubMenu_PONMSG) - 1;
 			break;
+#endif
 
 		case MENU_R_DCS:
 		case MENU_T_DCS:
@@ -382,10 +387,12 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 			*pMax = ARRAY_SIZE(gSubMenu_D_RSP) - 1;
 			break;
 #endif
+#ifdef ENABLE_DTMF_TX
 		case MENU_PTT_ID:
 			//*pMin = 0;
 			*pMax = ARRAY_SIZE(gSubMenu_PTT_ID) - 1;
 			break;
+#endif
 
 		case MENU_BAT_TXT:
 			//*pMin = 0;
@@ -832,10 +839,12 @@ void MENU_AcceptSetting(void)
 			break;
 #endif
 
+#ifdef ENABLE_DTMF_TX
 		case MENU_PTT_ID:
 			gTxVfo->DTMF_PTT_ID_TX_MODE = gSubMenuSelection;
 			gRequestSaveChannel         = 1;
 			return;
+#endif
 
 		case MENU_BAT_TXT:
 			gSetting_battery_text = gSubMenuSelection;
@@ -862,13 +871,16 @@ void MENU_AcceptSetting(void)
 			}
 			return;
 #endif
+#ifdef ENABLE_WELCOME
 		case MENU_PONMSG:
 			gEeprom.POWER_ON_DISPLAY_MODE = gSubMenuSelection;
 			break;
-
+#endif
+#ifdef ENABLE_ROGER
 		case MENU_ROGER:
 			gEeprom.ROGER = gSubMenuSelection;
 			break;
+#endif
 
 		case MENU_AM:
 			gTxVfo->Modulation     = gSubMenuSelection;
@@ -1088,11 +1100,13 @@ void MENU_ShowCurrentSetting(void)
 			uint8_t code = gTxVfo->freq_config_RX.Code;
 			int menuid = UI_MENU_GetCurrentMenuId();
 
+#ifdef ENABLE_SCANNER
 			if(gScanUseCssResult) {
 				gScanUseCssResult = false;
 				type = gScanCssResultType;
 				code = gScanCssResultCode;
 			}
+#endif
 			if((menuid==MENU_R_CTCS) ^ (type==CODE_TYPE_CONTINUOUS_TONE)) { //not the same type
 				gSubMenuSelection = 0;
 				break;
@@ -1302,9 +1316,11 @@ void MENU_ShowCurrentSetting(void)
 			gSubMenuSelection = gEeprom.DTMF_auto_reset_time;
 			break;
 #endif
+#ifdef ENABLE_DTMF_TX
 		case MENU_PTT_ID:
 			gSubMenuSelection = gTxVfo->DTMF_PTT_ID_TX_MODE;
 			break;
+#endif
 
 		case MENU_BAT_TXT:
 			gSubMenuSelection = gSetting_battery_text;
@@ -1321,13 +1337,16 @@ void MENU_ShowCurrentSetting(void)
 #endif
 
 
+#ifdef ENABLE_WELCOME
 		case MENU_PONMSG:
 			gSubMenuSelection = gEeprom.POWER_ON_DISPLAY_MODE;
 			break;
-
+#endif
+#ifdef ENABLE_ROGER
 		case MENU_ROGER:
 			gSubMenuSelection = gEeprom.ROGER;
 			break;
+#endif
 
 		case MENU_AM:
 			gSubMenuSelection = gTxVfo->Modulation;

@@ -1128,7 +1128,9 @@ void RADIO_EnableCxCSS(void)
 
 void RADIO_SendEndOfTransmission(void)
 {
+#ifdef ENABLE_ROGER
 	BK4819_PlayRoger();
+#endif
 	DTMF_SendEndOfTransmission();
 
 	// send the CTCSS/DCS tail tone - allows the receivers to mute the usual FM squelch tail/crash

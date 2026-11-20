@@ -36,6 +36,12 @@ ENABLE_CEC_APRS               ?= 0
 ENABLE_CEC_FT4_FT8            ?= 0
 ENABLE_CEC_CW_DECODE          ?= 0
 
+#--- HF-M1 : features that can be compiled out to save flash
+ENABLE_SCANNER                ?= 0	#CTCSS/DCS code scanner (F+*, RxCTCS/RxDCS menu) and F+4 frequency scanner
+ENABLE_ROGER                  ?= 0	#roger / MDC end of TX beep, Roger menu
+ENABLE_WELCOME                ?= 0	#power on message / voltage screen, POnMsg menu
+ENABLE_DTMF_TX                ?= 0	#DTMF sending : PTT ID, keypad tones while transmitting
+
 # ---- END OF KD8CEC WORK ------------------------------------------
 # ---- CUSTOM MODS ----
 ENABLE_BIG_FREQ               ?= 1
@@ -189,7 +195,9 @@ OBJS += app/menu.o
 ifeq ($(ENABLE_SPECTRUM), 1)
 OBJS += app/spectrum.o
 endif
-OBJS += app/scanner.o
+ifeq ($(ENABLE_SCANNER),1)
+	OBJS += app/scanner.o
+endif
 ifeq ($(ENABLE_UART),1)
 	OBJS += app/uart.o
 endif
@@ -223,7 +231,9 @@ ifeq ($(ENABLE_PWRON_PASSWORD),1)
 endif
 OBJS += ui/main.o
 OBJS += ui/menu.o
-OBJS += ui/scanner.o
+ifeq ($(ENABLE_SCANNER),1)
+	OBJS += ui/scanner.o
+endif
 OBJS += ui/status.o
 OBJS += ui/ui.o
 OBJS += ui/welcome.o
@@ -400,6 +410,18 @@ ifeq ($(ENABLE_FMRADIO),1)
 endif
 ifeq ($(ENABLE_UART),1)
 	CFLAGS += -DENABLE_UART
+endif
+ifeq ($(ENABLE_SCANNER),1)
+	CFLAGS += -DENABLE_SCANNER
+endif
+ifeq ($(ENABLE_ROGER),1)
+	CFLAGS += -DENABLE_ROGER
+endif
+ifeq ($(ENABLE_WELCOME),1)
+	CFLAGS += -DENABLE_WELCOME
+endif
+ifeq ($(ENABLE_DTMF_TX),1)
+	CFLAGS += -DENABLE_DTMF_TX
 endif
 ifeq ($(ENABLE_BIG_FREQ),1)
 	CFLAGS  += -DENABLE_BIG_FREQ

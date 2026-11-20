@@ -164,10 +164,15 @@ void Main(void)
 	}
 	else
 	{
+#ifdef ENABLE_WELCOME
 		UI_DisplayWelcome();
+#else
+		boot_counter_10ms = 0;	//no boot-up screen to wait for
+#endif
 
 		BACKLIGHT_TurnOn();
 
+#ifdef ENABLE_WELCOME
 		if (gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_NONE)
 		{	// 2.55 second boot-up screen
 			while (boot_counter_10ms > 0)
@@ -183,6 +188,7 @@ void Main(void)
 #endif
 			}
 		}
+#endif
 
 #ifdef ENABLE_PWRON_PASSWORD
 		if (gEeprom.POWER_ON_PASSWORD < 1000000)
