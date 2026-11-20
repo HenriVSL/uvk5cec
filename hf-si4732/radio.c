@@ -423,21 +423,24 @@ void RADIO_ConfigureSquelchAndOutputPower(VFO_Info_t *pInfo)
 	{	// squelch >= 1
 		Base += gEeprom.SQUELCH_LEVEL;                                        // my eeprom squelch-1
 																			  // VHF   UHF
-		EEPROM_ReadBuffer(Base + 0x00, &pInfo->SquelchOpenRSSIThresh,    1);  //  50    10
-		EEPROM_ReadBuffer(Base + 0x10, &pInfo->SquelchCloseRSSIThresh,   1);  //  40     5
+		// same six single-byte reads, same order as before:     VHF   UHF
+		//   [0] Base + 0x00  open  RSSI                          50    10
+		//   [1] Base + 0x10  close RSSI                          40     5
+		//   [2] Base + 0x20  open  noise                         65    90
+		//   [3] Base + 0x30  close noise                         70   100
+		//   [4] Base + 0x40  close glitch                        90    90
+		//   [5] Base + 0x50  open  glitch                       100   100
+		// only the 'open' values are used, the 'close' ones are derived from them below
+		uint8_t sq[6];
+		for (unsigned int i = 0; i < 6; i++)
+			EEPROM_ReadBuffer(Base + i * 0x10, &sq[i], 1);
 
-		EEPROM_ReadBuffer(Base + 0x20, &pInfo->SquelchOpenNoiseThresh,   1);  //  65    90
-		EEPROM_ReadBuffer(Base + 0x30, &pInfo->SquelchCloseNoiseThresh,  1);  //  70   100
-
-		EEPROM_ReadBuffer(Base + 0x40, &pInfo->SquelchCloseGlitchThresh, 1);  //  90    90
-		EEPROM_ReadBuffer(Base + 0x50, &pInfo->SquelchOpenGlitchThresh,  1);  // 100   100
-
-		uint16_t rssi_open    = pInfo->SquelchOpenRSSIThresh;
-		uint16_t rssi_close   = pInfo->SquelchCloseRSSIThresh;
-		uint16_t noise_open   = pInfo->SquelchOpenNoiseThresh;
-		uint16_t noise_close  = pInfo->SquelchCloseNoiseThresh;
-		uint16_t glitch_open  = pInfo->SquelchOpenGlitchThresh;
-		uint16_t glitch_close = pInfo->SquelchCloseGlitchThresh;
+		uint16_t rssi_open    = sq[0];
+		uint16_t rssi_close;
+		uint16_t noise_open   = sq[2];
+		uint16_t noise_close;
+		uint16_t glitch_open  = sq[5];
+		uint16_t glitch_close;
 
 		#if ENABLE_SQUELCH_MORE_SENSITIVE
 			// make squelch a little more sensitive
@@ -562,23 +565,14 @@ void RADIO_SelectVfos(void)
 	RADIO_SelectCurrentVfo();
 }
 
-void RADIO_SetupRegisters(bool switchToForeground)
+// shared by RADIO_SetupRegisters() and RADIO_SetTxParameters()
+static void RADIO_SetFilterBandwidthForVfo(const VFO_Info_t *pVfo)
 {
-	BK4819_FilterBandwidth_t Bandwidth = gRxVfo->CHANNEL_BANDWIDTH;
+	BK4819_FilterBandwidth_t Bandwidth = pVfo->CHANNEL_BANDWIDTH;
 
-	//By KD8CEC	
-	if (gRxVfo->Modulation == MODULATION_CW || gRxVfo->Modulation == MODULATION_CWN)
+	//By KD8CEC
+	if (pVfo->Modulation == MODULATION_CW || pVfo->Modulation == MODULATION_CWN)
 		Bandwidth = BK4819_FILTER_BW_CW;
-
-	//NOT OFF (USER WANT CONTINUED LISTEN)
-	if ((!isNeed4732Init) && HF_DualWatch )
-		AUDIO_AudioPathOn();
-	else
-		AUDIO_AudioPathOff();
-
-	gEnableSpeaker = false;
-
-	BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, false);
 
 	switch (Bandwidth)
 	{
@@ -589,13 +583,28 @@ void RADIO_SetupRegisters(bool switchToForeground)
 		case BK4819_FILTER_BW_WIDE:
 		case BK4819_FILTER_BW_NARROW:
 			#ifdef ENABLE_AM_FIX
-//				BK4819_SetFilterBandwidth(Bandwidth, gRxVfo->Modulation == MODULATION_AM && gSetting_AM_fix);
+//				BK4819_SetFilterBandwidth(Bandwidth, pVfo->Modulation == MODULATION_AM && gSetting_AM_fix);
 				BK4819_SetFilterBandwidth(Bandwidth, true);
 			#else
 				BK4819_SetFilterBandwidth(Bandwidth, false);
 			#endif
 			break;
 	}
+}
+
+void RADIO_SetupRegisters(bool switchToForeground)
+{
+	//NOT OFF (USER WANT CONTINUED LISTEN)
+	if ((!isNeed4732Init) && HF_DualWatch )
+		AUDIO_AudioPathOn();
+	else
+		AUDIO_AudioPathOff();
+
+	gEnableSpeaker = false;
+
+	BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, false);
+
+	RADIO_SetFilterBandwidthForVfo(gRxVfo);
 
 	BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, false);
 
@@ -766,7 +775,8 @@ void RADIO_SetupRegisters(bool switchToForeground)
 	}
 #endif
 
-	RADIO_SetupAGC(gRxVfo->Modulation == MODULATION_AM, false);
+	// (no RADIO_SetupAGC() here: RADIO_SetModulation(gRxVfo->Modulation) above already
+	//  made the identical call, so a second one always returned early on 'lastSettings')
 
 	// enable/disable BK4819 selected interrupts
 	BK4819_WriteRegister(BK4819_REG_3F, InterruptMask);
@@ -824,12 +834,6 @@ void RADIO_SetupRegisters(bool switchToForeground)
 
 void RADIO_SetTxParameters(void)
 {
-	BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
-
-	//by KD8CEC
-	if (gCurrentVfo->Modulation == MODULATION_CW || gCurrentVfo->Modulation == MODULATION_CWN)
-		Bandwidth = BK4819_FILTER_BW_CW;
-
 	uint8_t tmpDualWatch = HF_DualWatch;
 	HF_DualWatch = 0;
 	AUDIO_AudioPathOff();
@@ -839,22 +843,7 @@ void RADIO_SetTxParameters(void)
 
 	BK4819_ToggleGpioOut(BK4819_GPIO0_PIN28_RX_ENABLE, false);
 
-	switch (Bandwidth)
-	{
-		default:
-			Bandwidth = BK4819_FILTER_BW_WIDE;
-			[[fallthrough]];
-		case BK4819_FILTER_BW_CW :
-		case BK4819_FILTER_BW_WIDE:
-		case BK4819_FILTER_BW_NARROW:
-			#ifdef ENABLE_AM_FIX
-//				BK4819_SetFilterBandwidth(Bandwidth, gCurrentVfo->Modulation == MODULATION_AM && gSetting_AM_fix);
-				BK4819_SetFilterBandwidth(Bandwidth, true);
-			#else
-				BK4819_SetFilterBandwidth(Bandwidth, false);
-			#endif
-			break;
-	}
+	RADIO_SetFilterBandwidthForVfo(gCurrentVfo);
 
 	BK4819_SetFrequency(gCurrentVfo->pTX->Frequency);
 

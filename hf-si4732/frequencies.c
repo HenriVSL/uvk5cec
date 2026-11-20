@@ -185,14 +185,28 @@ int32_t TX_freq_check(const uint32_t Frequency)
 		return 0;
 #endif
 
+	// TX-allowed ranges [lower, upper) for each F_LOCK setting, in 100 kHz units
+	static const uint16_t lock_ranges[F_LOCK_ALL][2][2] =
+	{
+		[F_LOCK_DEF] = {{1370, 1740}, {4000, 4700}},	// BAND3_137MHz, BAND6_400MHz
+		[F_LOCK_FCC] = {{1440, 1480}, {4200, 4500}},
+		[F_LOCK_CE ] = {{1440, 1460}, {4300, 4400}},
+		[F_LOCK_GB ] = {{1440, 1480}, {4300, 4400}},
+		[F_LOCK_430] = {{1370, 1740}, {4000, 4300}},
+		[F_LOCK_438] = {{1370, 1740}, {4000, 4380}},
+	};
+
+	if (gSetting_F_LOCK < F_LOCK_ALL)
+	{
+		for (unsigned int i = 0; i < 2; i++)
+			if (Frequency >= lock_ranges[gSetting_F_LOCK][i][0] * 10000u && Frequency < lock_ranges[gSetting_F_LOCK][i][1] * 10000u)
+				return 0;
+	}
+
 	switch (gSetting_F_LOCK)
 	{
-		case F_LOCK_DEF:
-			if (Frequency >= frequencyBandTable[BAND3_137MHz].lower && Frequency < frequencyBandTable[BAND3_137MHz].upper)
-				return 0;
-			if (Frequency >= frequencyBandTable[BAND6_400MHz].lower && Frequency < frequencyBandTable[BAND6_400MHz].upper)
-				return 0;
 #ifndef ENABLE_HAMBAND_TX_CONTROL
+		case F_LOCK_DEF:
 			if (Frequency >= frequencyBandTable[BAND4_174MHz].lower && Frequency < frequencyBandTable[BAND4_174MHz].upper)
 				if (gSetting_200TX)
 					return 0;
@@ -204,46 +218,8 @@ int32_t TX_freq_check(const uint32_t Frequency)
 					return 0;
 			if (gSetting_500TX && Frequency > 120000000 && Frequency < 123000000)
 				return 0;
-#endif				
 			break;
-
-		case F_LOCK_FCC:
-			if (Frequency >= 14400000 && Frequency < 14800000)
-				return 0;
-			if (Frequency >= 42000000 && Frequency < 45000000)
-				return 0;
-			break;
-
-		case F_LOCK_CE:
-			if (Frequency >= 14400000 && Frequency < 14600000)
-				return 0;
-			if (Frequency >= 43000000 && Frequency < 44000000)
-				return 0;
-			break;
-
-		case F_LOCK_GB:
-			if (Frequency >= 14400000 && Frequency < 14800000)
-				return 0;
-			if (Frequency >= 43000000 && Frequency < 44000000)
-				return 0;
-			break;
-
-		case F_LOCK_430:
-			if (Frequency >= frequencyBandTable[BAND3_137MHz].lower && Frequency < 17400000)
-				return 0;
-			if (Frequency >= 40000000 && Frequency < 43000000)
-				return 0;
-			break;
-
-		case F_LOCK_438:
-			if (Frequency >= frequencyBandTable[BAND3_137MHz].lower && Frequency < 17400000)
-				return 0;
-			if (Frequency >= 40000000 && Frequency < 43800000)
-				return 0;
-			break;
-
-		case F_LOCK_ALL:
-			break;
+#endif
 
 		case F_LOCK_NONE:
 			for (uint32_t i = 0; i < ARRAY_SIZE(frequencyBandTable); i++)

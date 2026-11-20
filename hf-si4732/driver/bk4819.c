@@ -48,48 +48,77 @@ __inline uint16_t scale_freq(const uint16_t freq)
 	return (((uint32_t)freq * 1353245u) + (1u << 16)) >> 17;   // with rounding
 }
 
+typedef struct
+{
+	uint8_t  reg;
+	uint16_t val;
+} BK4819_RegVal_t;
+
+// write a fixed register sequence, in table order
+static void BK4819_WriteRegisters(const BK4819_RegVal_t *p, unsigned int n)
+{
+	for (; n > 0; n--, p++)
+		BK4819_WriteRegister(p->reg, p->val);
+}
+
 void BK4819_Init(void)
 {
+	static const BK4819_RegVal_t init1[] =
+	{
+		{BK4819_REG_00, 0x8000},
+		{BK4819_REG_00, 0x0000},
+		{BK4819_REG_37, 0x1D0F},
+		{BK4819_REG_36, 0x0022},
+	};
+
+	static const BK4819_RegVal_t init2[] =
+	{
+		{BK4819_REG_19, 0b0001000001000001},   // <15> MIC AGC  1 = disable  0 = enable
+		{BK4819_REG_7D, 0xE940},
+
+		// REG_48 .. RX AF level
+		//
+		// <15:12> 11  ???  0 to 15
+		//
+		// <11:10> 0 AF Rx Gain-1
+		//         0 =   0dB
+		//         1 =  -6dB
+		//         2 = -12dB
+		//         3 = -18dB
+		//
+		// <9:4>   60 AF Rx Gain-2  -26dB ~ 5.5dB   0.5dB/step
+		//         63 = max
+		//          0 = mute
+		//
+		// <3:0>   15 AF DAC Gain (after Gain-1 and Gain-2) approx 2dB/step
+		//         15 = max
+		//          0 = min
+		//
+		{BK4819_REG_48,	//  0xB3A8);     // 1011 00 111010 1000
+			(11u << 12) |     // ??? 0..15
+			( 0u << 10) |     // AF Rx Gain-1
+			(58u <<  4) |     // AF Rx Gain-2
+			( 8u <<  0)},     // AF DAC Gain (after Gain-1 and Gain-2)
+	};
+
+	static const BK4819_RegVal_t init3[] =
+	{
+		{BK4819_REG_1F, 0x5454},
+		{BK4819_REG_3E, 0xA037},
+		{BK4819_REG_33, 0x9000},   // = gBK4819_GpioOutState
+		{BK4819_REG_3F, 0},
+	};
+
 	GPIO_SetBit(&GPIOC->DATA, GPIOC_PIN_BK4819_SCN);
 	GPIO_SetBit(&GPIOC->DATA, GPIOC_PIN_BK4819_SCL);
 	GPIO_SetBit(&GPIOC->DATA, GPIOC_PIN_BK4819_SDA);
 
-	BK4819_WriteRegister(BK4819_REG_00, 0x8000);
-	BK4819_WriteRegister(BK4819_REG_00, 0x0000);
-
-	BK4819_WriteRegister(BK4819_REG_37, 0x1D0F);
-	BK4819_WriteRegister(BK4819_REG_36, 0x0022);
+	BK4819_WriteRegisters(init1, ARRAY_SIZE(init1));
 
 	BK4819_InitAGC(false);
 	BK4819_SetAGC(true);
 
-	BK4819_WriteRegister(BK4819_REG_19, 0b0001000001000001);   // <15> MIC AGC  1 = disable  0 = enable
-
-	BK4819_WriteRegister(BK4819_REG_7D, 0xE940);
-
-	// REG_48 .. RX AF level
-	//
-	// <15:12> 11  ???  0 to 15
-	//
-	// <11:10> 0 AF Rx Gain-1
-	//         0 =   0dB
-	//         1 =  -6dB
-	//         2 = -12dB
-	//         3 = -18dB
-	//
-	// <9:4>   60 AF Rx Gain-2  -26dB ~ 5.5dB   0.5dB/step
-	//         63 = max
-	//          0 = mute
-	//
-	// <3:0>   15 AF DAC Gain (after Gain-1 and Gain-2) approx 2dB/step
-	//         15 = max
-	//          0 = min
-	//
-	BK4819_WriteRegister(BK4819_REG_48,	//  0xB3A8);     // 1011 00 111010 1000
-		(11u << 12) |     // ??? 0..15
-		( 0u << 10) |     // AF Rx Gain-1
-		(58u <<  4) |     // AF Rx Gain-2
-		( 8u <<  0));     // AF DAC Gain (after Gain-1 and Gain-2)
+	BK4819_WriteRegisters(init2, ARRAY_SIZE(init2));
 
 #if 1
 	const uint8_t dtmf_coeffs[] = {111, 107, 103, 98, 80, 71, 58, 44, 65, 55, 37, 23, 228, 203, 181, 159};
@@ -115,13 +144,9 @@ void BK4819_Init(void)
 	BK4819_WriteRegister(BK4819_REG_09, 0xF09F);  // 9F
 #endif
 
-	BK4819_WriteRegister(BK4819_REG_1F, 0x5454);
-	BK4819_WriteRegister(BK4819_REG_3E, 0xA037);
-
 	gBK4819_GpioOutState = 0x9000;
 
-	BK4819_WriteRegister(BK4819_REG_33, 0x9000);
-	BK4819_WriteRegister(BK4819_REG_3F, 0);
+	BK4819_WriteRegisters(init3, ARRAY_SIZE(init3));
 }
 
 static uint16_t BK4819_ReadU16(void)
@@ -308,10 +333,14 @@ void BK4819_InitAGC(bool amModulation)
 	//         0 = -33dB
 	//
 
-	BK4819_WriteRegister(BK4819_REG_13, 0x03BE);  // 0x03BE / 000000 11 101 11 110 /  -7dB
-	BK4819_WriteRegister(BK4819_REG_12, 0x037B);  // 0x037B / 000000 11 011 11 011 / -24dB
-	BK4819_WriteRegister(BK4819_REG_11, 0x027B);  // 0x027B / 000000 10 011 11 011 / -43dB
-	BK4819_WriteRegister(BK4819_REG_10, 0x007A);  // 0x007A / 000000 00 011 11 010 / -58dB
+	static const BK4819_RegVal_t agc[] =
+	{
+		{BK4819_REG_13, 0x03BE},  // 0x03BE / 000000 11 101 11 110 /  -7dB
+		{BK4819_REG_12, 0x037B},  // 0x037B / 000000 11 011 11 011 / -24dB
+		{BK4819_REG_11, 0x027B},  // 0x027B / 000000 10 011 11 011 / -43dB
+		{BK4819_REG_10, 0x007A},  // 0x007A / 000000 00 011 11 010 / -58dB
+	};
+	BK4819_WriteRegisters(agc, ARRAY_SIZE(agc));
 	if(amModulation) {
 		BK4819_WriteRegister(BK4819_REG_14, 0x0000);
 		BK4819_WriteRegister(BK4819_REG_49, (0 << 14) | (50 << 7) | (32 << 0));

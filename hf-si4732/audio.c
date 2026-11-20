@@ -34,15 +34,40 @@
 
 BEEP_Type_t gBeepToPlay = BEEP_NONE;
 
+// per beep type: tone frequency [Hz], final tone duration [10 ms], number of extra 60 ms tones before it
+static const struct
+{
+	uint16_t freq;
+	uint8_t  duration_10ms;
+	uint8_t  extra_tones;
+} gBeepTable[] =
+{
+	[BEEP_NONE                           ] = { 220, 50, 0 },
+	[BEEP_1KHZ_60MS_OPTIONAL             ] = {1000,  6, 0 },
+	[BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL] = { 500,  6, 1 },
+	[BEEP_440HZ_500MS                    ] = { 440, 50, 0 },
+	[BEEP_880HZ_200MS                    ] = { 880, 20, 0 },
+	[BEEP_880HZ_500MS                    ] = { 880, 50, 0 },
+	[BEEP_500HZ_60MS_DOUBLE_BEEP         ] = { 500,  6, 1 },
+	[BEEP_440HZ_40MS_OPTIONAL            ] = { 440,  4, 0 },
+	[BEEP_880HZ_40MS_OPTIONAL            ] = { 880,  4, 0 },
+	[BEEP_880HZ_60MS_TRIPLE_BEEP         ] = { 880,  6, 2 },
+};
+
+// beeps that are played even when the key beep is turned off
+#define BEEP_MANDATORY_MASK ( \
+	(1u << BEEP_880HZ_60MS_TRIPLE_BEEP) | \
+	(1u << BEEP_500HZ_60MS_DOUBLE_BEEP) | \
+	(1u << BEEP_440HZ_500MS)            | \
+	(1u << BEEP_880HZ_200MS)            | \
+	(1u << BEEP_880HZ_500MS))
+
 void AUDIO_PlayBeep(BEEP_Type_t Beep)
 {
+	// unknown beep types are played like BEEP_NONE (220 Hz, 500 ms)
+	const unsigned int idx = (Beep < ARRAY_SIZE(gBeepTable)) ? Beep : BEEP_NONE;
 
-	if (Beep != BEEP_880HZ_60MS_TRIPLE_BEEP &&
-	    Beep != BEEP_500HZ_60MS_DOUBLE_BEEP &&
-	    Beep != BEEP_440HZ_500MS &&
-	    Beep != BEEP_880HZ_200MS &&
-	    Beep != BEEP_880HZ_500MS &&
-	   !gEeprom.BEEP_CONTROL)
+	if (!((BEEP_MANDATORY_MASK >> idx) & 1u) && !gEeprom.BEEP_CONTROL)
 		return;
 
 #ifdef ENABLE_AIRCOPY
@@ -70,33 +95,7 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
 
 	uint16_t ToneConfig = BK4819_ReadRegister(BK4819_REG_71);
 
-	uint16_t ToneFrequency;
-	switch (Beep)
-	{
-		default:
-		case BEEP_NONE:
-			ToneFrequency = 220;
-			break;
-		case BEEP_1KHZ_60MS_OPTIONAL:
-			ToneFrequency = 1000;
-			break;
-		case BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL:
-		case BEEP_500HZ_60MS_DOUBLE_BEEP:
-			ToneFrequency = 500;
-			break;
-		case BEEP_440HZ_40MS_OPTIONAL:
-		case BEEP_440HZ_500MS:
-			ToneFrequency = 440;
-			break;
-		case BEEP_880HZ_40MS_OPTIONAL:
-		case BEEP_880HZ_60MS_TRIPLE_BEEP:
-		case BEEP_880HZ_200MS:
-		case BEEP_880HZ_500MS:
-			ToneFrequency = 880;
-			break;
-	}
-
-	BK4819_PlayTone(ToneFrequency, true);
+	BK4819_PlayTone(gBeepTable[idx].freq, true);
 
 	SYSTEM_DelayMs(2);
 
@@ -104,44 +103,16 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
 
 	SYSTEM_DelayMs(60);
 
-	uint16_t Duration;
-	switch (Beep)
+	for (unsigned int i = gBeepTable[idx].extra_tones; i > 0; i--)
 	{
-		case BEEP_880HZ_60MS_TRIPLE_BEEP:
-			BK4819_ExitTxMute();
-			SYSTEM_DelayMs(60);
-			BK4819_EnterTxMute();
-			SYSTEM_DelayMs(20);
-			[[fallthrough]];
-		case BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL:
-		case BEEP_500HZ_60MS_DOUBLE_BEEP:
-			BK4819_ExitTxMute();
-			SYSTEM_DelayMs(60);
-			BK4819_EnterTxMute();
-			SYSTEM_DelayMs(20);
-			[[fallthrough]];
-		case BEEP_1KHZ_60MS_OPTIONAL:
-			BK4819_ExitTxMute();
-			Duration = 60;
-			break;
-		case BEEP_880HZ_40MS_OPTIONAL:
-		case BEEP_440HZ_40MS_OPTIONAL:
-			BK4819_ExitTxMute();
-			Duration = 40;
-			break;
-		case BEEP_880HZ_200MS:
-			BK4819_ExitTxMute();
-			Duration = 200;
-			break;
-		case BEEP_440HZ_500MS:
-		case BEEP_880HZ_500MS:
-		default:
-			BK4819_ExitTxMute();
-			Duration = 500;
-			break;
+		BK4819_ExitTxMute();
+		SYSTEM_DelayMs(60);
+		BK4819_EnterTxMute();
+		SYSTEM_DelayMs(20);
 	}
 
-	SYSTEM_DelayMs(Duration);
+	BK4819_ExitTxMute();
+	SYSTEM_DelayMs(gBeepTable[idx].duration_10ms * 10);
 	BK4819_EnterTxMute();
 	SYSTEM_DelayMs(20);
 
