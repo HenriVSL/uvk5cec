@@ -68,10 +68,9 @@ Features compiled out by default to make room in flash (set to 1 in the Makefile
 | EXIT | Back to the normal VHF/UHF radio |
 
 Frequency entry fills in the blanks of `__.___` MHz and accepts by itself when the
-last blank is filled: `14230` = 14.230, `7150` = 7.150 (a first digit 4-9 is a single
-MHz digit), `3573` = 3.573 (3 not followed by 0 too). `*` jumps to the kHz part for
-the rest: `1*840` = 1.840, `*531` = 0.531 (MW). F switches to an FM template `___._`
-(`945` = 94.5, `1011` = 101.1). MENU accepts early, EXIT deletes the last digit
+last blank is filled: `14230` = 14.230, `07150` = 7.150, `00531` = 0.531 (MW).
+`*` jumps past the point (`7*150`). F switches to the FM template `___._`
+(`0945` = 94.5, `1011` = 101.1). MENU accepts early, EXIT deletes the last digit
 (cancels when empty). HF frequencies typed while in FM switch to the band's usual mode.
 
 Screen: status line has the band (20M HAM / 25M BC), step and AGC. In SSB/CW the
@@ -81,7 +80,7 @@ shows the filter passband next to the carrier, with the bandwidth.
 ### HF setup menu
 
 UP/DOWN select, MENU edits (UP/DOWN or SIDE keys change the value live; the mode is
-only switched when you confirm), MENU or EXIT finishes editing, 1-9 jump to an item,
+only switched when you confirm), MENU or EXIT finishes editing, 1-9 and 0 (= 10) jump to an item,
 EXIT closes the menu. The bottom line explains the selected item.
 
 | Item | Values |
@@ -90,7 +89,8 @@ EXIT closes the menu. The bottom line explains the selected item.
 | Band | 20 HF bands, each remembers its last frequency; the band mode is applied when you finish editing |
 | Step | 1, 5, 10, 50, 100, 500, 1000 kHz |
 | AGC | AUTO, or ATT 0/1/5/15/26 (AGC off). Now applied in AM and FM too, not only SSB |
-| SSB BW | 1.2, 2.2, 3.0, 4.0, 0.5, 1.0 kHz |
+| Filter | AM: 1.0, 1.8, 2.0, 2.5, 3.0, 4.0, 6.0 kHz channel filter. SSB/CW: 1.2, 2.2, 3.0, 4.0, 0.5, 1.0 kHz. FM: automatic |
+| Line NR | AM power line (mains hum/buzz) noise filter, OFF / ON |
 | Fine step | 10, 25, 50, 100 Hz (SIDE key fine tune step) |
 | BFO tune | SSB/CW fine tune below 1 kHz (same as the SIDE keys), folds into the dial at +-500 Hz |
 | Boot HF | OFF / ON (same setting as HFBoot in the normal menu) |

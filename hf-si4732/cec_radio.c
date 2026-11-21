@@ -58,6 +58,14 @@ static const char bandwitdth[][4] = {"1.2", "2.2", "3.0", "4.0", "0.5", "1.0"};
 
 uint8_t currentAGCAtt = 0;
 
+// AM channel filter, narrow to wide, with the AMCHFLT value of each (chip default 2 kHz)
+#define AM_BANDWIDTH_COUNT 7
+#define DEFAULT_AM_BANDWIDTH_INDEX 2
+static const char amBandwidthName[AM_BANDWIDTH_COUNT][4] = {"1.0", "1.8", "2.0", "2.5", "3.0", "4.0", "6.0"};
+static const uint8_t amBandwidthReg[AM_BANDWIDTH_COUNT] = {4, 5, 3, 6, 2, 1, 0};
+static uint8_t amBandwidthIdx = DEFAULT_AM_BANDWIDTH_INDEX;
+static uint8_t amLineNoiseFilter = 0;	//AMPLFLT : power line noise rejection
+
 
 //============ SCREEN DESIGN (Version 0.1 ~ 0.2 )==================
 // MODE Switch Change AM ->  LSB -> USB
@@ -384,15 +392,23 @@ void CEC_Radio_DrawScreen(void)
 	CEC_DisplaySmallest("STEP-", 2, 48, false, true);
     UI_DrawRectangleBuffer(gFrameBuffer, 0 , 34, 23, 55, true);
 */
-	// SSB/CW passband : carrier at x 80, 11 px per kHz, -4 .. +4 kHz, LSB on the left
-	if (NowMode >= MODE_LSB)
+	// Filter passband : carrier at x 80, 11 px per kHz, -4 .. +4 kHz, LSB on the left, AM both sides
+	if (NowMode != MODE_FM)
 	{
 		static const uint8_t passLow[MAX_BANDWIDTH_COUNT]  = {0, 0, 0, 0, 3, 5};		//100 Hz units
 		static const uint8_t passHigh[MAX_BANDWIDTH_COUNT] = {12, 22, 30, 40, 8, 15};
+		static const uint8_t amWidth[AM_BANDWIDTH_COUNT] = {10, 18, 20, 25, 30, 40, 60};
 		int8_t side = NowMode == MODE_LSB ? -1 : 1;
 		int16_t x1 = 80 + side * passLow[bandwidthIdx] * 11 / 10;
 		int16_t x2 = 80 + side * passHigh[bandwidthIdx] * 11 / 10;
 
+		if (NowMode == MODE_AM)
+		{
+			x1 = 80 - amWidth[amBandwidthIdx] * 11 / 20;
+			x2 = 160 - x1;
+			if (amLineNoiseFilter)
+				CEC_DisplaySmallest("NR", 14, 41, false, true);
+		}
 		if (x1 > x2)
 		{
 			int16_t t = x1;
@@ -410,7 +426,7 @@ void CEC_Radio_DrawScreen(void)
 			UI_DrawLineBuffer(gFrameBuffer, 80 + k * 11, k ? 53 : 41, 80 + k * 11, 55, true);
 
 		CEC_DisplaySmallest("BW", 2, 41, false, true);
-		sprintf(tmpBuff, "%sK", bandwitdth[bandwidthIdx]);
+		sprintf(tmpBuff, "%sK", NowMode == MODE_AM ? amBandwidthName[amBandwidthIdx] : bandwitdth[bandwidthIdx]);
 		UI_PrintStringSmallNormal(tmpBuff, 0, 0, 6);
 	}
 
@@ -540,6 +556,8 @@ void SetSSBConfig()
 {
 	SI4735_setAvcAmMaxGain(90); // Sets the maximum gain for automatic volume control on AM/SSB mode (from 12 to 90dB)
 	SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);	//AGC / ATT in every mode, not only SSB
+	if (NowMode == MODE_AM)
+		SI4735_setBandwidth(amBandwidthReg[amBandwidthIdx], amLineNoiseFilter);
 	if (NowMode < 2)
 		return;
 	SI4735_setSSBBfo2(-currentBFO + (NowMode == 4 ? (CW_Tone * -10) : 0) );
@@ -720,8 +738,13 @@ void LoadSaveConfig(bool isLoad)
 			disableAgc = 1;
 		}
 
-		AMFreqStep = SI4735_ROM1.amStep < 7 ? SI4735_ROM1.amStep : 2;		//10Khz
-		SSBFreqStep = SI4735_ROM1.ssbStep < 7 ? SI4735_ROM1.ssbStep : 0;	//1Khz
+		//amStep : high nibble AM filter + 1, ssbStep : bit 4 AM line noise filter (both 0 on older images)
+		AMFreqStep = (SI4735_ROM1.amStep & 0x0F) < 7 ? (SI4735_ROM1.amStep & 0x0F) : 2;		//10Khz
+		SSBFreqStep = (SI4735_ROM1.ssbStep & 0x0F) < 7 ? (SI4735_ROM1.ssbStep & 0x0F) : 0;	//1Khz
+		amBandwidthIdx = (SI4735_ROM1.amStep >> 4) - 1;
+		if (amBandwidthIdx >= AM_BANDWIDTH_COUNT)
+			amBandwidthIdx = DEFAULT_AM_BANDWIDTH_INDEX;
+		amLineNoiseFilter = (SI4735_ROM1.ssbStep & 0xEF) < 7 && (SI4735_ROM1.ssbStep & 0x10);
 	}
 	else
 	{
@@ -736,8 +759,8 @@ void LoadSaveConfig(bool isLoad)
 		SI4735_ROM1.amFreq = CurrentAMFreq;
 		SI4735_ROM1.bandwidth = (NowMode == MODE_CW ? restoreBandwidthIdx : bandwidthIdx) | ((NowMode + 1) << 4);
 		SI4735_ROM1.agcInfo = (currentAGCAtt << 1) | (disableAgc & 0x01);
-		SI4735_ROM1.amStep = AMFreqStep;
-		SI4735_ROM1.ssbStep = SSBFreqStep;
+		SI4735_ROM1.amStep = AMFreqStep | ((amBandwidthIdx + 1) << 4);
+		SI4735_ROM1.ssbStep = SSBFreqStep | (amLineNoiseFilter << 4);
 
 		EEPROM_WriteBuffer(SI4735_RADIO_EEPROM, &SI4735_ROM1);
 	}
@@ -754,6 +777,7 @@ enum {
 	HFM_STEP,
 	HFM_AGC,
 	HFM_BW,
+	HFM_LINENR,
 	HFM_FINE,
 	HFM_BFO,
 	HFM_BOOT,
@@ -761,13 +785,14 @@ enum {
 	HFM_COUNT
 };
 
-static const char hfMenuName[HFM_COUNT][10] = {"Mode", "Band", "Step", "AGC", "SSB BW", "Fine step", "BFO tune", "Boot HF", "Exit HF"};
+static const char hfMenuName[HFM_COUNT][10] = {"Mode", "Band", "Step", "AGC", "Filter", "Line NR", "Fine step", "BFO tune", "Boot HF", "Exit HF"};
 static const char * const hfMenuHelp[HFM_COUNT] = {
 	"MENU OR EXIT APPLIES THE MODE",
 	"JUMP BAND, KEEPS LAST FREQ",
 	"UP/DOWN TUNING STEP",
 	"AUTO GAIN OR FIXED ATTENUATOR",
-	"SSB/CW AUDIO FILTER WIDTH",
+	"AM OR SSB/CW FILTER WIDTH",
+	"AM ONLY: MAINS HUM/BUZZ FILTER",
 	"SIDE KEY STEP FOR SSB/CW",
 	"SUB-KHZ SSB TUNE = SIDE KEYS",
 	"START IN HF RX AT POWER ON",
@@ -872,7 +897,13 @@ static void HF_MenuValue(uint8_t item, char *buf)
 				strcpy(buf, "AUTO");
 			break;
 		case HFM_BW:
-			sprintf(buf, "%sK", bandwitdth[bandwidthIdx]);
+			if (NowMode == MODE_FM)
+				strcpy(buf, "AUTO");
+			else
+				sprintf(buf, "%sK", NowMode == MODE_AM ? amBandwidthName[amBandwidthIdx] : bandwitdth[bandwidthIdx]);
+			break;
+		case HFM_LINENR:
+			strcpy(buf, amLineNoiseFilter ? "ON" : "OFF");
 			break;
 		case HFM_FINE:
 			sprintf(buf, "%uHz", currentBFOStep);
@@ -907,7 +938,13 @@ static void HF_MenuChange(uint8_t item, int8_t dir)
 			currentAGCAtt = agcIndex ? agcAttList[agcIndex - 1] : 0;
 			break;
 		case HFM_BW:
-			bandwidthIdx = HF_Cycle(bandwidthIdx, MAX_BANDWIDTH_COUNT, dir);
+			if (NowMode == MODE_AM)
+				amBandwidthIdx = HF_Cycle(amBandwidthIdx, AM_BANDWIDTH_COUNT, dir);
+			else if (NowMode != MODE_FM)
+				bandwidthIdx = HF_Cycle(bandwidthIdx, MAX_BANDWIDTH_COUNT, dir);
+			break;
+		case HFM_LINENR:
+			amLineNoiseFilter = !amLineNoiseFilter;
 			break;
 		case HFM_FINE:
 			currentBFOStep = fineStepList[HF_Cycle(HF_GetFineIndex(), sizeof(fineStepList), dir)];
@@ -1031,8 +1068,8 @@ static bool HF_SetupMenu(uint8_t quickItem)
 			}
 			editing = !editing;
 		}
-		else if (!editing && key >= KEY_1 && key <= KEY_9)
-			hfMenuCursor = key - KEY_1;
+		else if (!editing && key <= KEY_9)	//1-9, 0 = item 10
+			hfMenuCursor = key ? key - KEY_1 : 9;
 	}
 
 	if (oldBootMode != HF_BootMode)
@@ -1043,8 +1080,8 @@ static bool HF_SetupMenu(uint8_t quickItem)
 }
 
 // Fill in the blanks frequency entry, started with the first digit already pressed.
-// HF __.___ MHz : a first digit 4-9 (or 3 not followed by 0) is a single MHz digit, * jumps to the kHz part.
-// FM ___._ MHz  : F switches between HF and FM. Accepts when the last blank is filled or with MENU,
+// HF __.___ MHz (07150 = 7.150), FM ___._ MHz (0945 = 94.5), F switches between them, * jumps to the
+// part after the point (7*150). Accepts when the last blank is filled or with MENU,
 // EXIT deletes the last digit (cancels when empty), 10 s without a key cancels.
 static void HF_FrequencyEntry(KEY_Code_t key)
 {
@@ -1077,7 +1114,7 @@ static void HF_FrequencyEntry(KEY_Code_t key)
 
 			//replay the keys, so delete is just one key less
 			bool intDone = false;
-			uint8_t intLen = 2;
+			uint8_t intLen = fm ? 3 : 2;
 
 			intPart = fracPart = nInt = nFrac = 0;
 			maxFrac = fm ? 1 : 3;
@@ -1092,17 +1129,10 @@ static void HF_FrequencyEntry(KEY_Code_t key)
 				}
 				if (!intDone)
 				{
-					if (nInt == 0)
-						intLen = (fm && k == 1) ? 3 : 2;
-					if (!fm && nInt == 1 && intPart * 10 + k > 30)
-						intDone = true;	//3.5xx : this digit is already kHz
-					else
-					{
-						intPart = intPart * 10 + k;
-						if (++nInt == intLen || (!fm && k >= 4 && nInt == 1))
-							intDone = true;
-						continue;
-					}
+					intPart = intPart * 10 + k;
+					if (++nInt == intLen)
+						intDone = true;
+					continue;
 				}
 				if (nFrac < maxFrac)
 				{
