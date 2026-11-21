@@ -60,10 +60,10 @@ Features compiled out by default to make room in flash (set to 1 in the Makefile
 | Key | Action |
 | --- | --- |
 | 0-9 | Frequency entry (the first digit counts) |
-| UP / DOWN | Tune by step (hold to repeat) |
-| SIDE keys | SSB/CW: fine tune with the BFO, AM/FM: change step |
+| UP / DOWN | Tune by step (hold to repeat). SSB/CW at step FINE: tune by the Fine step (10-100 Hz) |
+| * / SIDE1 | Step up / step down. SSB/CW steps: FINE, 1k ... 1000k |
+| SIDE2 (lower) | Seek: short press up, hold down. Any key stops. AM and FM only (the chip can not seek SSB) |
 | F | Mode picker: F/UP/DOWN choose, MENU or EXIT applies (no wait while choosing) |
-| * | Next step |
 | MENU | HF setup menu |
 | EXIT | Back to the normal VHF/UHF radio |
 
@@ -82,16 +82,22 @@ shows the filter passband next to the carrier, with the bandwidth.
 UP/DOWN select, MENU edits (UP/DOWN or SIDE keys change the value live; the mode is
 only switched when you confirm), MENU or EXIT finishes editing, 1-9 and 0 (= 10) jump to an item,
 EXIT closes the menu. The bottom line explains the selected item.
+AVC, Soft mute and Seek lvl are stored at EEPROM 0x0F28. FM broadcast uses 50 us
+de-emphasis (`HF_FM_DEEMPHASIS` in cec_radio.c, 2 = 75 us for the Americas).
 
 | Item | Values |
 | --- | --- |
 | Mode | FM, AM, LSB, USB, CW |
 | Band | 20 HF bands, each remembers its last frequency; the band mode is applied when you finish editing |
-| Step | 1, 5, 10, 50, 100, 500, 1000 kHz |
+| Step | 1, 5, 10, 50, 100, 500, 1000 kHz, plus FINE in SSB/CW |
+| Seek | MENU seeks up from here (same as SIDE2) |
 | AGC | AUTO, or ATT 0/1/5/15/26 (AGC off). Now applied in AM and FM too, not only SSB |
 | Filter | AM: 1.0, 1.8, 2.0, 2.5, 3.0, 4.0, 6.0 kHz channel filter. SSB/CW: 1.2, 2.2, 3.0, 4.0, 0.5, 1.0 kHz. FM: automatic |
+| AVC | Automatic volume control max gain: OFF (SSB off, AM 12 dB), 30, 50, 70, 90 dB. Default 90 (now also on in SSB) |
+| Soft mute | Max attenuation of the hiss on weak signals: OFF, 8 (default), 16, 32 dB |
 | Line NR | AM power line (mains hum/buzz) noise filter, OFF / ON |
-| Fine step | 10, 25, 50, 100 Hz (SIDE key fine tune step) |
-| BFO tune | SSB/CW fine tune below 1 kHz (same as the SIDE keys), folds into the dial at +-500 Hz |
+| Seek lvl | Signal (RSSI) a seek stops on: 10-35 dBuV, default 20 |
+| Fine step | 10, 25, 50, 100 Hz (UP/DOWN step at step FINE) |
+| BFO tune | SSB/CW fine tune below 1 kHz (same as UP/DOWN at step FINE), folds into the dial at +-500 Hz |
 | Boot HF | OFF / ON (same setting as HFBoot in the normal menu) |
 | Exit HF | MENU leaves HF mode |

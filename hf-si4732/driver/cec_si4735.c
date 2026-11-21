@@ -1564,7 +1564,7 @@ void seekStationProgress(void (*showFunc)(uint16_t f), bool (*stopSeking)(), uin
     } while (!currentStatus.resp.VALID && !currentStatus.resp.BLTF && (millis() - elapsed_seek) < maxSeekTime);
     */
     si47x_frequency freq;
-    unsigned long elapsed_seek;
+    unsigned long elapsed_seek = 0;
 
     // seek command does not work for SSB
     if (lastMode == SSB_CURRENT_MODE)

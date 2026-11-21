@@ -66,6 +66,22 @@ static const uint8_t amBandwidthReg[AM_BANDWIDTH_COUNT] = {4, 5, 3, 6, 2, 1, 0};
 static uint8_t amBandwidthIdx = DEFAULT_AM_BANDWIDTH_INDEX;
 static uint8_t amLineNoiseFilter = 0;	//AMPLFLT : power line noise rejection
 
+// AM/SSB receive tuning, stored at SI4735_RADIO_EEPROM2 (0xFF = default)
+#define SOFTMUTE_COUNT 4
+#define DEFAULT_SOFTMUTE_INDEX 1
+static const uint8_t softMuteList[SOFTMUTE_COUNT] = {0, 8, 16, 32};	//max attenuation dB, 8 = chip default
+#define AVC_COUNT 5
+#define DEFAULT_AVC_INDEX 4
+static const uint8_t avcGainList[AVC_COUNT] = {12, 30, 50, 70, 90};	//AVC max gain dB, index 0 = OFF in SSB
+#define SEEKLEVEL_COUNT 6
+#define DEFAULT_SEEKLEVEL_INDEX 2
+static const uint8_t seekLevelList[SEEKLEVEL_COUNT] = {10, 15, 20, 25, 30, 35};	//RSSI dBuV to stop a seek
+static uint8_t softMuteIdx = DEFAULT_SOFTMUTE_INDEX;
+static uint8_t avcIdx = DEFAULT_AVC_INDEX;
+static uint8_t seekLevelIdx = DEFAULT_SEEKLEVEL_INDEX;
+
+#define HF_FM_DEEMPHASIS 1	//1 : 50 us (Europe, Asia), 2 : 75 us (Americas, Korea)
+
 
 //============ SCREEN DESIGN (Version 0.1 ~ 0.2 )==================
 // MODE Switch Change AM ->  LSB -> USB
@@ -95,6 +111,7 @@ static uint8_t freqStepIdx[3] = {1, 2, 0};
 #define AMFreqStep	freqStepIdx[1]
 #define SSBFreqStep	freqStepIdx[2]
 #define NowStepIdx	freqStepIdx[NowMode < 2 ? NowMode : 2]
+#define HF_STEP_FINE	7	//SSB/CW only : UP/DOWN fine tune with the BFO (Fine step Hz)
 bool disableAgc = true;
 
 
@@ -212,6 +229,7 @@ const Band swband[] = {
 uint16_t CurrentFreqs[20];
 
 #define SI4735_RADIO_EEPROM 0x0F20
+#define SI4735_RADIO_EEPROM2 0x0F28
 void LoadSaveConfig(bool isLoad);
 
 int8_t CEC_FindBandIndex(uint16_t srcFreq)
@@ -324,7 +342,10 @@ void CEC_Radio_DrawScreen(void)
 		bandTypeName = swband[nowBandIndex].BandType == BAND_BCAST ? "BC" : "HAM";
 	}
 
-	sprintf(tmpBuff, "%s %s STEP %uK", bandName, bandTypeName, NowMode == MODE_FM ? currentStep * 10 : currentStep);
+	if (dispStep == HF_STEP_FINE)
+		sprintf(tmpBuff, "%s %s STEP %uHZ", bandName, bandTypeName, currentBFOStep);
+	else
+		sprintf(tmpBuff, "%s %s STEP %uK", bandName, bandTypeName, NowMode == MODE_FM ? currentStep * 10 : currentStep);
     CEC_DisplaySmallest(tmpBuff, 3, 1, true, true);
 	if (!disableAgc)
 		strcpy(tmpBuff, "AGC ON");
@@ -370,7 +391,10 @@ void CEC_Radio_DrawScreen(void)
 	//else
 	//	drawStepUnderLineX = 30;
 
-    UI_DrawRectangleBuffer(gFrameBuffer, drawStepUnderLineX , 22, drawStepUnderLineX + 13, 23, true);
+	if (dispStep == HF_STEP_FINE)	//under the .xx (10 Hz) digits
+		UI_DrawLineBuffer(gFrameBuffer, 112, 15, 125, 15, true);
+	else
+    	UI_DrawRectangleBuffer(gFrameBuffer, drawStepUnderLineX , 22, drawStepUnderLineX + 13, 23, true);
 
 	//With 13
 	//dispStep
@@ -454,20 +478,15 @@ void AppllyStep(uint8_t _nowStep)
 void SetSI4735ChangeStep(uint8_t isIncrease)
 {
 	uint8_t nowStep = NowStepIdx;
-
+	// SSB/CW cycle FINE, 1k .. 1000k; AM/FM 1 .. 1000 (x10k in FM)
+	uint8_t count = NowMode >= MODE_LSB ? 8 : 7;
+	uint8_t pos = nowStep == HF_STEP_FINE ? 0 : nowStep + (count - 7);
 
 	if (isIncrease == 1)	//Increase
-	{
-		if (++nowStep > 6)
-			nowStep = 0;
-	}
+		pos = (pos + 1) % count;
 	else if (isIncrease == 0)	//Decrease
-	{
-		if (nowStep == 0)
-			nowStep = 6;
-		else 
-			nowStep--;
-	}
+		pos = (pos + count - 1) % count;
+	nowStep = (count == 8) ? (pos == 0 ? HF_STEP_FINE : pos - 1) : pos;
 
 	//other skip
 	static const uint16_t lstStep[] = {1, 5, 10, 50, 100, 500, 1000};
@@ -476,7 +495,7 @@ void SetSI4735ChangeStep(uint8_t isIncrease)
 	//currentStep = 1;
 	//for (int i = 0; i < nowStep; i++)
 	//	currentStep *= 10;
-	currentStep = lstStep[nowStep];
+	currentStep = lstStep[nowStep == HF_STEP_FINE ? 0 : nowStep];
 
 	uint16_t tmpFreq = SI4735_getFrequency();
 
@@ -554,13 +573,17 @@ void WaitMomentDisplay()
 
 void SetSSBConfig()
 {
-	SI4735_setAvcAmMaxGain(90); // Sets the maximum gain for automatic volume control on AM/SSB mode (from 12 to 90dB)
 	SI4735_setAutomaticGainControl(disableAgc, currentAGCAtt);	//AGC / ATT in every mode, not only SSB
+	//soft mute : 0x1302 in FM, 0x3302 shared by AM and SSB
+	sendProperty(NowMode == MODE_FM ? FM_SOFT_MUTE_MAX_ATTENUATION : AM_SOFT_MUTE_MAX_ATTENUATION, softMuteList[softMuteIdx]);
+	if (NowMode != MODE_FM)
+		SI4735_setAvcAmMaxGain(avcGainList[avcIdx]); // maximum gain for automatic volume control on AM/SSB (12 to 90dB)
 	if (NowMode == MODE_AM)
 		SI4735_setBandwidth(amBandwidthReg[amBandwidthIdx], amLineNoiseFilter);
 	if (NowMode < 2)
 		return;
 	SI4735_setSSBBfo2(-currentBFO + (NowMode == 4 ? (CW_Tone * -10) : 0) );
+	SI4735_setSSBAutomaticVolumeControl(avcIdx != 0);
 	SI4735_setTuneFrequencyAntennaCapacitor(1); // Set antenna tuning capacitor for SW. 0 : auto, max for sw is 6143
 
 	//bandwidthIdx
@@ -583,7 +606,10 @@ void SetSI4735Mode(uint8_t newMode)
 	//SendMixSignal();
 
 	if (newMode == 0)	//FM
+	{
 		SI4735_setFM(7000, 10800,  CurrentFMFreq, FMFreqStep);
+		sendProperty(FM_DEEMPHASIS, HF_FM_DEEMPHASIS);	//chip default is 75 us
+	}
 	else if (newMode == 1)	//AM
 		SI4735_setAM(AMBAND_FREQ_LOW, AMBAND_FREQ_HIGH,  CurrentAMFreq, AMFreqStep);
 	else if (newMode == 2 || newMode == 3 || newMode == 4)	//LSB, USB, CW
@@ -633,7 +659,6 @@ SI4735_setAM2
 	//AppllyStep(currentStep);	//Change currnetStep
 	NowMode = newMode;
 	//SI4735_setVolume(63);
-	SI4735_setSSBAutomaticVolumeControl(false);
 
 	SetSSBConfig();
 	SetSI4735ChangeStep(2);
@@ -740,11 +765,17 @@ void LoadSaveConfig(bool isLoad)
 
 		//amStep : high nibble AM filter + 1, ssbStep : bit 4 AM line noise filter (both 0 on older images)
 		AMFreqStep = (SI4735_ROM1.amStep & 0x0F) < 7 ? (SI4735_ROM1.amStep & 0x0F) : 2;		//10Khz
-		SSBFreqStep = (SI4735_ROM1.ssbStep & 0x0F) < 7 ? (SI4735_ROM1.ssbStep & 0x0F) : 0;	//1Khz
+		SSBFreqStep = (SI4735_ROM1.ssbStep & 0x0F) <= HF_STEP_FINE ? (SI4735_ROM1.ssbStep & 0x0F) : 0;	//1Khz
 		amBandwidthIdx = (SI4735_ROM1.amStep >> 4) - 1;
 		if (amBandwidthIdx >= AM_BANDWIDTH_COUNT)
 			amBandwidthIdx = DEFAULT_AM_BANDWIDTH_INDEX;
-		amLineNoiseFilter = (SI4735_ROM1.ssbStep & 0xEF) < 7 && (SI4735_ROM1.ssbStep & 0x10);
+		amLineNoiseFilter = (SI4735_ROM1.ssbStep & 0xEF) <= HF_STEP_FINE && (SI4735_ROM1.ssbStep & 0x10);
+
+		uint8_t rom2[3];	//soft mute, AVC, seek level
+		EEPROM_ReadBuffer(SI4735_RADIO_EEPROM2, rom2, sizeof(rom2));
+		softMuteIdx = rom2[0] < SOFTMUTE_COUNT ? rom2[0] : DEFAULT_SOFTMUTE_INDEX;
+		avcIdx = rom2[1] < AVC_COUNT ? rom2[1] : DEFAULT_AVC_INDEX;
+		seekLevelIdx = rom2[2] < SEEKLEVEL_COUNT ? rom2[2] : DEFAULT_SEEKLEVEL_INDEX;
 	}
 	else
 	{
@@ -763,21 +794,28 @@ void LoadSaveConfig(bool isLoad)
 		SI4735_ROM1.ssbStep = SSBFreqStep | (amLineNoiseFilter << 4);
 
 		EEPROM_WriteBuffer(SI4735_RADIO_EEPROM, &SI4735_ROM1);
+
+		uint8_t rom2[8] = {softMuteIdx, avcIdx, seekLevelIdx, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+		EEPROM_WriteBuffer(SI4735_RADIO_EEPROM2, rom2);
 	}
 }
 
 //===================== MENU DRIVEN HF UI =====================
-// Main screen : 0-9 frequency entry, UP/DOWN tune, SIDE fine tune (SSB) or step (AM/FM),
-//               F mode picker, * step, MENU setup, EXIT back to VHF/UHF
+// Main screen : 0-9 frequency entry, UP/DOWN tune (step FINE = BFO in SSB/CW), * step up,
+//               SIDE1 step down, SIDE2 seek (hold = down), F mode picker, MENU setup, EXIT back to VHF/UHF
 // Setup menu  : UP/DOWN select, MENU edit (UP/DOWN or SIDE change the value live, the mode
 //               only when confirmed), MENU/EXIT done, 1-9 jump to item, EXIT close
 enum {
 	HFM_MODE = 0,
 	HFM_BAND,
 	HFM_STEP,
-	HFM_AGC,
+	HFM_SEEK,
 	HFM_BW,
+	HFM_AGC,
+	HFM_AVC,
+	HFM_SOFTMUTE,
 	HFM_LINENR,
+	HFM_SEEKLEVEL,
 	HFM_FINE,
 	HFM_BFO,
 	HFM_BOOT,
@@ -785,16 +823,21 @@ enum {
 	HFM_COUNT
 };
 
-static const char hfMenuName[HFM_COUNT][10] = {"Mode", "Band", "Step", "AGC", "Filter", "Line NR", "Fine step", "BFO tune", "Boot HF", "Exit HF"};
+static const char hfMenuName[HFM_COUNT][10] = {"Mode", "Band", "Step", "Seek", "Filter", "AGC", "AVC", "Soft mute",
+	"Line NR", "Seek lvl", "Fine step", "BFO tune", "Boot HF", "Exit HF"};
 static const char * const hfMenuHelp[HFM_COUNT] = {
 	"MENU OR EXIT APPLIES THE MODE",
 	"JUMP BAND, KEEPS LAST FREQ",
-	"UP/DOWN TUNING STEP",
-	"AUTO GAIN OR FIXED ATTENUATOR",
+	"UP/DOWN STEP, FINE = SSB HZ",
+	"MENU SEEKS UP. ALSO SIDE2 KEY",
 	"AM OR SSB/CW FILTER WIDTH",
+	"AUTO GAIN OR FIXED ATTENUATOR",
+	"AUDIO BOOST FOR WEAK SIGNALS",
+	"QUIETER HISS ON WEAK SIGNALS",
 	"AM ONLY: MAINS HUM/BUZZ FILTER",
-	"SIDE KEY STEP FOR SSB/CW",
-	"SUB-KHZ SSB TUNE = SIDE KEYS",
+	"SIGNAL NEEDED TO STOP A SEEK",
+	"HZ PER UP/DOWN AT STEP FINE",
+	"SUB-KHZ SSB TUNE (STEP FINE)",
 	"START IN HF RX AT POWER ON",
 	"BACK TO THE VHF/UHF RADIO",
 };
@@ -888,7 +931,25 @@ static void HF_MenuValue(uint8_t item, char *buf)
 			strcpy(buf, NowMode == MODE_FM ? "FM" : swband[CEC_FindBandIndex(currentWorkFrequency)].bandName);
 			break;
 		case HFM_STEP:
-			sprintf(buf, "%uK", NowMode == MODE_FM ? currentStep * 10 : currentStep);
+			if (NowStepIdx == HF_STEP_FINE)
+				sprintf(buf, "%uHz", currentBFOStep);
+			else
+				sprintf(buf, "%uK", NowMode == MODE_FM ? currentStep * 10 : currentStep);
+			break;
+		case HFM_AVC:
+			if (avcIdx == 0)
+				strcpy(buf, "OFF");
+			else
+				sprintf(buf, "%udB", avcGainList[avcIdx]);
+			break;
+		case HFM_SOFTMUTE:
+			if (softMuteIdx == 0)
+				strcpy(buf, "OFF");
+			else
+				sprintf(buf, "%udB", softMuteList[softMuteIdx]);
+			break;
+		case HFM_SEEKLEVEL:
+			sprintf(buf, "%udBuV", seekLevelList[seekLevelIdx]);
 			break;
 		case HFM_AGC:
 			if (disableAgc)
@@ -946,6 +1007,15 @@ static void HF_MenuChange(uint8_t item, int8_t dir)
 		case HFM_LINENR:
 			amLineNoiseFilter = !amLineNoiseFilter;
 			break;
+		case HFM_AVC:
+			avcIdx = HF_Cycle(avcIdx, AVC_COUNT, dir);
+			break;
+		case HFM_SOFTMUTE:
+			softMuteIdx = HF_Cycle(softMuteIdx, SOFTMUTE_COUNT, dir);
+			break;
+		case HFM_SEEKLEVEL:
+			seekLevelIdx = HF_Cycle(seekLevelIdx, SEEKLEVEL_COUNT, dir);
+			break;
 		case HFM_FINE:
 			currentBFOStep = fineStepList[HF_Cycle(HF_GetFineIndex(), sizeof(fineStepList), dir)];
 			break;
@@ -997,16 +1067,19 @@ static void HF_DrawMenu(bool editing)
 	ST7565_BlitFullScreen();
 }
 
-// Returns true when "Exit HF" was selected.
+#define HF_MENU_EXIT 1	//"Exit HF" selected
+#define HF_MENU_SEEK 2	//"Seek" selected
+
+// Returns 0, HF_MENU_EXIT or HF_MENU_SEEK.
 // quickItem < HFM_COUNT : start editing that item and leave when the edit is confirmed (F key = mode)
-static bool HF_SetupMenu(uint8_t quickItem)
+static uint8_t HF_SetupMenu(uint8_t quickItem)
 {
 	bool quick = quickItem < HFM_COUNT;
 	bool editing = quick;
 	bool bandChanged = false;
 	bool needKeyUp = true;
 	uint8_t oldBootMode = HF_BootMode;
-	bool exitHF = false;
+	uint8_t action = 0;
 
 	hfPendingMode = NowMode;
 	if (quick)
@@ -1041,9 +1114,9 @@ static bool HF_SetupMenu(uint8_t quickItem)
 		}
 		else if (key == KEY_MENU || key == KEY_EXIT)
 		{
-			if (key == KEY_MENU && hfMenuCursor == HFM_EXIT)
+			if (key == KEY_MENU && (hfMenuCursor == HFM_EXIT || hfMenuCursor == HFM_SEEK))
 			{
-				exitHF = true;
+				action = hfMenuCursor == HFM_EXIT ? HF_MENU_EXIT : HF_MENU_SEEK;
 				break;
 			}
 
@@ -1076,7 +1149,7 @@ static bool HF_SetupMenu(uint8_t quickItem)
 		SETTINGS_SaveSettings();
 
 	isAutoSave = 1;
-	return exitHF;
+	return action;
 }
 
 // Fill in the blanks frequency entry, started with the first digit already pressed.
@@ -1233,6 +1306,57 @@ static void HF_FrequencyEntry(KEY_Code_t key)
 	isAutoSave = 1;
 }
 
+static void HF_SeekShow(uint16_t freq)
+{
+	char buf[10];
+	uint16_t div = NowMode == MODE_FM ? 100 : 1000;
+
+	memset(gFrameBuffer[1], 0, 104);
+	memset(gFrameBuffer[2] + 22, 0, 82);
+	sprintf(buf, NowMode == MODE_FM ? "%4u.%02u" : "%3u.%03u", freq / div, freq % div);
+	UI_DisplayFrequency(buf, 20, 1, false);
+	ST7565_BlitFullScreen();
+}
+
+static bool HF_SeekStop(void)
+{
+	return KEYBOARD_Poll() != KEY_INVALID;
+}
+
+// Hardware seek to the next station (AM/FM, the chip can not seek in SSB). Any key stops it.
+static void HF_Seek(bool up)
+{
+	memset(gFrameBuffer[5], 0, 128 * 2);
+	if (NowMode >= MODE_LSB)
+	{
+		CEC_DisplaySmallest("SEEK WORKS IN AM AND FM ONLY", 2, 50, false, true);
+		ST7565_BlitFullScreen();
+		delay(1000);
+		return;
+	}
+
+	CEC_DisplaySmallest(up ? "SEEK UP, ANY KEY STOPS" : "SEEK DOWN, ANY KEY STOPS", 2, 50, false, true);
+	WaitKeyUp();
+
+	if (NowMode == MODE_AM)
+	{
+		setSeekAmLimits(AMBAND_FREQ_LOW, AMBAND_FREQ_HIGH);
+		setSeekAmSpacing(currentWorkFrequency < 1800 ? 9 : 5);	//MW 9 kHz, SW 5 kHz grid
+		setSeekAmRssiThreshold(seekLevelList[seekLevelIdx]);
+	}
+	else
+	{
+		setSeekFmLimits(7000, 10800);
+		setSeekFmSpacing(10);	//100 kHz
+		setSeekFmRssiThreshold(seekLevelList[seekLevelIdx]);
+	}
+
+	seekStationProgress(HF_SeekShow, HF_SeekStop, up);
+	WaitKeyUp();
+	currentBFO = 0;
+	isAutoSave = 1;
+}
+
 bool isNeed4732Init = true;
 void CEC_Radio_Work(void)
 {
@@ -1340,29 +1464,33 @@ void CEC_Radio_Work(void)
 				HF_FrequencyEntry(chkKey);
 			else if (chkKey == KEY_MENU)
 			{
-				if (HF_SetupMenu(HFM_COUNT))
+				uint8_t action = HF_SetupMenu(HFM_COUNT);
+
+				if (action == HF_MENU_EXIT)
 					chkKey = KEY_EXIT;
+				else if (action == HF_MENU_SEEK)
+				{
+					CEC_Radio_DrawScreen();
+					HF_Seek(true);
+				}
 			}
 			else if (chkKey == KEY_F)	//mode picker, applied on MENU/EXIT
 				HF_SetupMenu(HFM_MODE);
 			else if (chkKey == KEY_STAR)
 				SetSI4735ChangeStep(1);
-			else if (chkKey == KEY_UP || chkKey == KEY_DOWN || chkKey == KEY_SIDE1 || chkKey == KEY_SIDE2)
+			else if (chkKey == KEY_SIDE1)
+				SetSI4735ChangeStep(0);
+			else if (chkKey == KEY_SIDE2)	//seek, short up, hold down
+				HF_Seek(GetKeyPressTime(50) < 50);
+			else if (chkKey == KEY_UP || chkKey == KEY_DOWN)
 			{
-				int8_t dir = (chkKey == KEY_UP || chkKey == KEY_SIDE1) ? 1 : -1;
-
 				isNeedKeyUpCheck = false;	//hold to repeat
-				if (chkKey == KEY_UP)
+				if (NowMode >= MODE_LSB && SSBFreqStep == HF_STEP_FINE)
+					HF_FineTune(chkKey == KEY_UP ? 1 : -1);
+				else if (chkKey == KEY_UP)
 					SI4735_frequencyUp();
-				else if (chkKey == KEY_DOWN)
-					SI4735_frequencyDown();
-				else if (NowMode >= MODE_LSB)
-					HF_FineTune(dir);
 				else
-				{
-					SetSI4735ChangeStep(dir > 0);
-					isNeedKeyUpCheck = true;
-				}
+					SI4735_frequencyDown();
 			}
 
 			if (chkKey == KEY_EXIT)
