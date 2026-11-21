@@ -62,24 +62,27 @@ Features compiled out by default to make room in flash (set to 1 in the Makefile
 | 0-9 | Frequency entry (the first digit counts) |
 | UP / DOWN | Tune by step (hold to repeat) |
 | SIDE keys | SSB/CW: fine tune with the BFO, AM/FM: change step |
-| F | Mode AM -> LSB -> USB -> CW -> AM (FM -> AM) |
+| F | Mode picker: F/UP/DOWN choose, MENU or EXIT applies (no wait while choosing) |
 | * | Next step |
 | MENU | HF setup menu |
 | EXIT | Back to the normal VHF/UHF radio |
 
-Frequency entry: type kHz (`7074`, `14074`) or MHz with `*` as the decimal point
-(`7*074`, `93*1`). Short numbers are MHz (`7`, `14`, `93`, `100`). MENU accepts,
-EXIT deletes the last digit (cancels when empty); 5 digits, or 3 digits after the
-point, are accepted automatically. FM broadcast frequencies (70-108 MHz) switch to FM.
-HF frequencies typed while in FM switch to the band's usual mode.
+Frequency entry fills in the blanks of `__.___` MHz and accepts by itself when the
+last blank is filled: `14230` = 14.230, `7150` = 7.150 (a first digit 4-9 is a single
+MHz digit), `3573` = 3.573 (3 not followed by 0 too). `*` jumps to the kHz part for
+the rest: `1*840` = 1.840, `*531` = 0.531 (MW). F switches to an FM template `___._`
+(`945` = 94.5, `1011` = 101.1). MENU accepts early, EXIT deletes the last digit
+(cancels when empty). HF frequencies typed while in FM switch to the band's usual mode.
 
-SSB fine tune folds the BFO into the dial frequency every 1 kHz, so the shown
-frequency plus the BFO offset is where you are listening.
+Screen: status line has the band (20M HAM / 25M BC), step and AGC. In SSB/CW the
+frequency is shown to 10 Hz (`14.229.88` = dial plus BFO fine tune) and the bottom
+shows the filter passband next to the carrier, with the bandwidth.
 
 ### HF setup menu
 
-UP/DOWN select, MENU edits (UP/DOWN or SIDE keys change the value live), MENU or EXIT
-finishes editing, 1-9 jump to an item, EXIT closes the menu.
+UP/DOWN select, MENU edits (UP/DOWN or SIDE keys change the value live; the mode is
+only switched when you confirm), MENU or EXIT finishes editing, 1-9 jump to an item,
+EXIT closes the menu. The bottom line explains the selected item.
 
 | Item | Values |
 | --- | --- |
@@ -88,7 +91,7 @@ finishes editing, 1-9 jump to an item, EXIT closes the menu.
 | Step | 1, 5, 10, 50, 100, 500, 1000 kHz |
 | AGC | AUTO, or ATT 0/1/5/15/26 (AGC off). Now applied in AM and FM too, not only SSB |
 | SSB BW | 1.2, 2.2, 3.0, 4.0, 0.5, 1.0 kHz |
-| FineStp | 10, 25, 50, 100 Hz (SIDE key fine tune step) |
-| BFO | Current BFO offset |
+| Fine step | 10, 25, 50, 100 Hz (SIDE key fine tune step) |
+| BFO tune | SSB/CW fine tune below 1 kHz (same as the SIDE keys), folds into the dial at +-500 Hz |
 | Boot HF | OFF / ON (same setting as HFBoot in the normal menu) |
 | Exit HF | MENU leaves HF mode |
