@@ -328,7 +328,7 @@ void CEC_Radio_DrawScreen(void)
 
 	sprintf(tmpBuff, "%-5s %4uKhz %s %3sK",bandTypeName,  NowMode == MODE_FM ? currentStep * 10 : currentStep, tmpLnaStr, bandwitdth[bandwidthIdx] );
     CEC_DisplaySmallest(tmpBuff, 3, 1, true, true);
-    CEC_DisplaySmallest("H0.5", 107, 1, true, true);
+    CEC_DisplaySmallest("HENE", 107, 1, true, true);
     CEC_ReverseScreen(gStatusLine, sizeof(gStatusLine));
     ST7565_BlitStatusLine();
 

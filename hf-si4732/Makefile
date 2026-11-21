@@ -278,7 +278,7 @@ AUTHOR_STRING ?= KD8CEC_FROM_SOURCE_CODE_EGZUMER
 # can set own version string here (max 7 chars)
 
 # CHANGE VERSION TYPE
-VERSION_STRING ?= CEC_0.51HF
+VERSION_STRING ?= HENE_1.0
 
 
 ASFLAGS = -c -mcpu=cortex-m0

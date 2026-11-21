@@ -31,7 +31,7 @@ make
 
 Verified build on 2026-09-15 (produces `firmware.bin`).
 
-## Menu driven HF mod (CEC_0.51HF-M1)
+## HENE_1.0 firmware : menu driven HF (based on KD8CEC CEC_0.51HF)
 
 This fork replaces the "remember which key does what" HF controls with a setup menu
 and on-screen key hints.
